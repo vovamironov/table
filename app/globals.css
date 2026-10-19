@@ -9,7 +9,7 @@
 }
 
 :root {
-  --ink: rgba(0, 0, 0, 0.8);
+  --ink: #333333;
   --muted: #9299a2;
   --soft: rgba(36, 74, 127, 0.06);
   --soft-hover: rgba(36, 74, 127, 0.09);
@@ -445,8 +445,10 @@ a { color: inherit; text-decoration: none; }
   padding-bottom: 24px;
   display: flex;
   flex-direction: column;
-  gap: 64px;
+  gap: 40px;
 }
+.price-section-heading { display: flex; flex-direction: column; align-items: center; gap: 24px; }
+.price-section-subtitle { margin: 0; color: #333333; font: 400 15px/24px 'Neue Haas Unica W1G', 'Helvetica Neue', Arial, sans-serif; text-align: center; }
 .chart-preview-page {
   min-height: 100vh;
   background: #fff;
@@ -468,6 +470,7 @@ a { color: inherit; text-decoration: none; }
   background: #fff;
 }
 .chart-preview-mode-switch { padding: 3px; display: inline-flex; gap: 2px; border-radius: 12px; background: #f0f2f5; }
+.chart-preview-variant-switch { margin-right: auto; }
 .chart-preview-mode-switch button {
   min-height: 36px;
   padding: 8px 12px;
@@ -562,11 +565,20 @@ a { color: inherit; text-decoration: none; }
 .asset-comparison-profit.neutral { color: #9299a2; }
 .asset-comparison-method { max-width: 980px; margin: auto 0 0; color: #9299a2; font: 400 12px/18px 'Neue Haas Unica W1G', 'Helvetica Neue', Arial, sans-serif; }
 .asset-comparison-method a { color: #126df7; text-decoration: underline; text-underline-offset: 2px; }
-.price-chart-layout { --chart-line: #428bf9; --chart-current-badge: #428bf929; --chart-current-text: #126df7; --chart-point: #428bf9; --chart-point-ring: #fff; --chart-point-muted: #bdd6fd; width: 100%; height: 100%; }
-.price-chart-layout[data-profitable] { --chart-line: #36c578; --chart-current-badge: #00b92d29; --chart-current-text: #00a328; --chart-point: #fff; --chart-point-ring: #36c578; --chart-point-muted: #fff; }
+.price-chart-layout { --chart-line: #428bf9; --chart-current-badge: rgba(36,74,127,.06); --chart-current-text: #333333; --chart-guide: rgba(146,153,162,.25); --chart-point: #428bf9; --chart-point-ring: #fff; --chart-point-muted: #bdd6fd; width: 100%; height: 100%; }
+.price-chart-layout[data-profitable] { --chart-line: #36c578; --chart-point: #fff; --chart-point-ring: #36c578; --chart-point-muted: #fff; }
+.price-chart-layout:is([data-variant='b'], [data-variant='c'], [data-variant='d']) { --chart-spinner-color: #428bf9; }
+.price-chart-layout:is([data-variant='b'], [data-variant='c'], [data-variant='d'])[data-profitable] { --chart-line: #428bf9; --chart-point-ring: #428bf9; }
+.price-chart-layout[data-variant='d'] .price-chart { cursor: default; touch-action: auto; pointer-events: none; }
 .chart-panel, .return-chart-wrap { position: relative; width: 100%; height: 100%; }
 .price-chart-panel { height: inherit; display: grid; grid-template-rows: 44px minmax(0, 1fr) auto; gap: 32px; }
-.price-window-row { width: 100%; min-width: 0; height: 44px; display: flex; align-items: center; }
+.chart-preview-page .price-section .chart-content,
+.chart-preview-page .price-analysis.no-tabs,
+.chart-preview-page .price-chart-layout,
+.chart-preview-page .price-chart-panel { height: auto; }
+.chart-preview-page .price-chart-panel { grid-template-rows: auto auto auto; }
+.chart-preview-page .liveline-chart { height: 450px; min-height: 450px; }
+.price-window-row { width: 100%; min-width: 0; height: 44px; display: flex; align-items: center; justify-content: center; }
 .price-window-list { min-width: 0; max-width: 100%; min-height: 44px; padding: 2px; display: inline-flex; align-items: center; gap: 4px; overflow-x: auto; border-radius: 999px; background: rgba(36,74,127,.06); scrollbar-width: none; }
 .price-window-list::-webkit-scrollbar { display: none; }
 .price-window-button {
@@ -579,20 +591,26 @@ a { color: inherit; text-decoration: none; }
   border: 0;
   border-radius: 999px;
   background: transparent;
-  color: rgba(0,0,0,.8);
+  color: #333333;
   font-size: 15px;
   font-weight: 400;
   line-height: 24px;
   cursor: pointer;
   transition: color .2s ease, background .2s ease, box-shadow .2s ease;
 }
-.price-window-return { min-width: 44px; min-height: 20px; padding: 2px 4px; display: inline-flex; align-items: center; justify-content: center; border-radius: 20px; background: #00b92d29; color: #00a328; font: 500 13px/16px 'Chart Chip Medium', 'Helvetica Neue', Arial, sans-serif; white-space: nowrap; }
+.price-window-return { min-width: 0; width: max-content; flex: 0 0 auto; min-height: 20px; padding: 2px 4px; display: inline-flex; align-items: center; justify-content: center; border-radius: 20px; background: var(--chart-positive-fill, #00b92d29); color: var(--chart-positive, #00a328); font: 500 15px/16px 'Chart Chip Medium', 'Helvetica Neue', Arial, sans-serif; white-space: nowrap; }
 .price-window-return.is-loading { background: #e9edf1; color: #9299a2; }
-.price-window-spinner { width: 12px; height: 12px; border: 2px solid rgba(0,0,0,.16); border-top-color: #00a328; border-radius: 50%; animation: price-window-spin .7s linear infinite; }
+.price-window-spinner { width: 12px; height: 12px; border: 2px solid rgba(0,0,0,.16); border-top-color: var(--chart-spinner-color, #00a328); border-radius: 50%; animation: price-window-spin .7s linear infinite; }
 @keyframes price-window-spin { to { transform: rotate(360deg); } }
 .price-window-button:hover { color: var(--ink); }
 .price-window-button:not([data-active]):hover { background: #d6dbe4; }
-.price-window-button[data-active] { padding-right: 8px; background: #fff; color: rgba(0,0,0,.8); box-shadow: 0 5px 10px rgba(0,0,0,.1); }
+.price-window-button[data-active] { padding-right: 8px; background: #fff; color: #333333; box-shadow: 0 5px 10px rgba(0,0,0,.1); }
+.price-chart-layout[data-variant='b'] .price-window-list { background: #f6f4f3; border-radius: 8px; }
+.price-chart-layout[data-variant='b'] .price-window-button { border-radius: 6px; gap: 4px; }
+.price-chart-layout[data-variant='b'] .price-window-button[data-active] { padding-right: 14px; }
+.price-window-return-text { flex: 0 0 auto; display: inline-flex; align-items: center; color: var(--chart-positive, #00a328); font: inherit; white-space: nowrap; }
+.price-window-return-text.negative { color: #d92d20; }
+.price-window-return-text.neutral, .price-window-return-text.is-loading { color: #9299a2; }
 .price-window-button[data-active] .price-window-return.negative { background: #d92d2029; color: #d92d20; }
 .price-window-button[data-active] .price-window-return.neutral { background: #9299a229; color: #9299a2; }
 .price-window-action {
@@ -684,15 +702,29 @@ a { color: inherit; text-decoration: none; }
 }
 .faq-content p { margin: 0; }
 .liveline-chart { position: relative; min-height: 0; margin-top: 24px; }
+.liveline-chart[data-peak-burst] { animation: chart-peak-shake 280ms ease-out; }
+.chart-peak-burst { position: absolute; width: 0; height: 0; z-index: 5; pointer-events: none; color: var(--chart-line); }
+.chart-peak-particle { position: absolute; left: -2px; top: -2px; width: 4px; height: 4px; border-radius: 50%; background: currentColor; animation: chart-peak-particle 600ms cubic-bezier(.16,1,.3,1) both; }
+
+.chart-peak-ring { position: absolute; left: -6px; top: -6px; width: 12px; height: 12px; border: 1px solid currentColor; border-radius: 50%; animation: chart-peak-ring 450ms ease-out both; }
+@keyframes chart-peak-particle { 0% { opacity: 0; transform: translate(0, 0) scale(.5); } 12% { opacity: .85; } 100% { opacity: 0; transform: translate(var(--peak-dx), var(--peak-dy)) scale(.3); } }
+@keyframes chart-peak-ring { from { opacity: .55; transform: scale(.7); } to { opacity: 0; transform: scale(2.8); } }
+@keyframes chart-peak-shake { 0%, 100% { translate: 0 0; } 18% { translate: -1px 1px; } 38% { translate: 1.5px -1.5px; } 60% { translate: -1px .5px; } 80% { translate: .5px 0; } }
+@media (prefers-reduced-motion: reduce) { .liveline-chart[data-peak-burst] { animation: none; } .chart-peak-burst { display: none; } }
 .chart-entry-clip { transform-box: fill-box; transform-origin: left center; transform: scaleX(var(--chart-entry-start-scale)); }
 .price-chart-layout[data-entry='drawing'] .chart-entry-clip { transform: scaleX(1); transition: transform 1600ms cubic-bezier(.22,.61,.36,1); }
+.price-chart-layout[data-entry='current'] .chart-entry-clip,
 .price-chart-layout[data-entry='done'] .chart-entry-clip { transform: scaleX(1); }
-.chart-entry-svg-data, .chart-entry-overlays { opacity: 0; transition: opacity .32s ease; }
+.chart-entry-svg-data, .chart-entry-overlays { opacity: 0; transition: opacity .38s ease-out; }
+.price-chart-layout[data-entry='current'] .chart-entry-svg-data,
 .price-chart-layout[data-entry='done'] .chart-entry-svg-data,
+.price-chart-layout[data-entry='current'] .chart-entry-overlays,
 .price-chart-layout[data-entry='done'] .chart-entry-overlays { opacity: 1; }
+.price-chart-layout:not([data-entry='done']):not([data-entry='current']) .chart-intermediate-label { opacity: 0 !important; translate: 0 3px; transition: none; }
+.price-chart-layout:not([data-entry='done']):not([data-entry='current']) .chart-entry-overlays .chart-intermediate-point { opacity: 0; transition: none; }
 .chart-entry-overlays { position: absolute; inset: 0; pointer-events: none; }
-.price-chart-layout:not([data-entry='done']) .chart-current-point::after { animation: none; opacity: 0; }
-.price-chart-disclaimer { margin: 0; padding-left: .8%; color: #9299a2; font: 400 13px/18px 'Neue Haas Unica W1G', 'Helvetica Neue', Arial, sans-serif; text-align: left; }
+.price-chart-layout:not([data-entry='done']):not([data-entry='current']) .chart-current-point::after { animation: none; opacity: 0; }
+.price-chart-disclaimer { margin: 0; color: #9299a2; font: 400 13px/18px 'Neue Haas Unica W1G', 'Helvetica Neue', Arial, sans-serif; text-align: center; }
 .mobile-return-section { display: none; }
 .mobile-return-calculator { display: flex; flex-direction: column; }
 .price-chart { position: absolute; inset: 0; width: 100%; height: 100%; display: block; overflow: visible; touch-action: pan-y; cursor: crosshair; }
@@ -710,27 +742,49 @@ a { color: inherit; text-decoration: none; }
   0% { opacity: .28; transform: scale(1); }
   22.5%, 100% { opacity: 0; transform: scale(2.33); }
 }
-.chart-current-price-badge { transform: translateX(4px); height: 28px; min-width: 0; margin-left: 40px; padding: 0 10px; border: 0; border-radius: 999px; background: var(--chart-current-badge); color: var(--chart-current-text); font: 500 15px/24px 'Chart Chip Medium', 'Helvetica Neue', Arial, sans-serif; transition: background .3s ease, color .3s ease; }
+.chart-current-price-badge { transform: translateX(4px); height: 28px; min-width: 0; margin-left: 20px; padding: 0 10px; border: 0; border-radius: 999px; background: var(--chart-current-badge); color: var(--chart-current-text); font: 500 17px/24px 'Chart Chip Medium', 'Helvetica Neue', Arial, sans-serif; transition: background .3s ease, color .3s ease; }
+.price-chart-layout[data-variant='b'] .chart-current-price-badge { height: auto; min-height: 56px; padding: 8px; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; border-radius: 8px; background: #fff; color: var(--ink); font: 500 15px/20px 'Chart Chip Medium', 'Helvetica Neue', Arial, sans-serif; transition: opacity .15s ease; }
+.chart-current-return { color: var(--chart-positive, #00a328); font: 400 13px/16px 'Neue Haas Unica W1G', 'Helvetica Neue', Arial, sans-serif; }
+.chart-current-return.negative { color: #d92d20; }
+.chart-current-return.neutral { color: #9299a2; }
 .liveline-area-muted { opacity: .16; }
 .liveline-area-active { opacity: 1; }
 .price-line { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .gold-price-line { stroke: var(--chart-line); transition: stroke .3s ease; }
 .gold-price-line-muted { opacity: .28; }
 .gold-price-line-active { opacity: 1; }
-.chart-current-guide { stroke: var(--chart-line); stroke-opacity: .35; stroke-width: 1; stroke-dasharray: 4 5; vector-effect: non-scaling-stroke; transition: stroke .3s ease; }
-.chart-current-guide.muted { stroke-opacity: .16; }
-.chart-intermediate-guide { stroke: rgba(146,153,162,.25); stroke-width: 1; stroke-dasharray: 4 5; vector-effect: non-scaling-stroke; pointer-events: none; transition: opacity .15s ease; }
+.chart-current-guide { stroke: var(--chart-guide); stroke-width: 1; stroke-dasharray: 4 5; vector-effect: non-scaling-stroke; transition: opacity .15s ease; }
+.chart-current-guide.muted { opacity: .46; }
+.chart-hover-price-guide { stroke: var(--chart-guide); stroke-width: 1; stroke-dasharray: 4 5; vector-effect: non-scaling-stroke; pointer-events: none; }
+.chart-axis-hover-indicator { position: absolute; z-index: 4; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px; border-radius: 12px; background: #f6f4f3; transform: translateY(-18px); pointer-events: none; }
+.chart-axis-hover-price { color: var(--ink); font: 500 15px/20px 'Chart Chip Medium', 'Helvetica Neue', Arial, sans-serif; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.chart-current-return-number { font: inherit; line-height: 1; font-variant-numeric: tabular-nums; --number-flow-mask-height: .12em; --number-flow-mask-width: .2em; }
+.chart-axis-hover-return { color: var(--chart-positive, #00a328); font: 400 13px/16px 'Neue Haas Unica W1G', 'Helvetica Neue', Arial, sans-serif; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.chart-axis-hover-return.negative { color: #d92d20; }
+.chart-axis-hover-return.neutral { color: #9299a2; }
+.chart-axis-hover-date { z-index: 4; }
+.price-chart-layout:is([data-variant='b'], [data-variant='c'])[data-scrubbing] .chart-timeline-labels,
+.price-chart-layout[data-variant='c'][data-scrubbing] .chart-date-divider,
+.price-chart-layout:is([data-variant='b'], [data-variant='c'])[data-scrubbing] .chart-date-tick { visibility: hidden; }
+.chart-intermediate-guide { stroke: var(--chart-guide); stroke-width: 1; stroke-dasharray: 4 5; vector-effect: non-scaling-stroke; pointer-events: none; transition: opacity .15s ease; }
+.price-chart-layout[data-variant='b'][data-scrubbing] .chart-intermediate-guide { opacity: 0; }
 .chart-intermediate-marker { position: absolute; z-index: 2; width: 0; height: 0; pointer-events: none; transition: opacity .15s ease; }
-.chart-intermediate-marker.is-scrubbing { opacity: 0; }
+.chart-intermediate-marker.is-scrubbing .chart-intermediate-point { opacity: 0; }
+.chart-intermediate-marker.is-scrubbing .chart-intermediate-label { opacity: 0 !important; translate: 0 3px; transition: opacity .18s ease-out, translate .18s ease-out; }
 .chart-hover-marker { position: absolute; z-index: 3; width: 0; height: 0; pointer-events: none; }
 .chart-intermediate-marker .chart-intermediate-point { opacity: 1; transition: opacity .18s ease-out, background .3s ease, box-shadow .3s ease; }
 .price-chart-layout[data-morphing] .chart-intermediate-marker .chart-intermediate-point { opacity: 0; transition: none; }
 .price-chart-layout[data-morphing] .chart-intermediate-label { opacity: 0 !important; translate: 0 3px; transition: none; }
 .chart-intermediate-point { position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; border-radius: 50%; background: var(--chart-line); box-shadow: 0 0 0 3px #fff; transition: background .3s ease, box-shadow .3s ease; }
-.chart-intermediate-label { position: absolute; bottom: 20px; left: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 2px 5px; border-radius: 6px; background: rgba(255,255,255,.72); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); transform: translateX(-50%); white-space: nowrap; translate: 0 0; transition: opacity .22s ease-out .06s, translate .22s ease-out .06s; }
-.chart-intermediate-marker.start .chart-intermediate-label { left: -9.5px; align-items: flex-start; transform: none; }
-.chart-intermediate-label strong { color: #000; font: 500 13px/24px 'Chart Chip Medium', 'Helvetica Neue', Arial, sans-serif; }
-.chart-intermediate-change { color: #00a328; font: 400 13px/16px 'Neue Haas Unica W1G', 'Helvetica Neue', Arial, sans-serif; }
+.chart-intermediate-label { position: absolute; bottom: 16px; left: -12.5px; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: max-content; padding: 8px; border-radius: 12px; background: rgba(255,255,255,.72); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); transform: none; white-space: nowrap; translate: 0 0; transition: opacity .38s ease-out .06s, translate .38s cubic-bezier(.22,1,.36,1) .06s; }
+.chart-intermediate-label strong { color: #333333; font: 500 15px/24px 'Chart Chip Medium', 'Helvetica Neue', Arial, sans-serif; }
+.chart-intermediate-marker.start .chart-intermediate-label strong { line-height: 20px; }
+.price-chart-layout[data-variant='b'] .chart-intermediate-label { bottom: 20px; background: #f6f4f3; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.price-chart-layout[data-variant='b'] .chart-intermediate-label strong { color: var(--ink); font-size: 15px; line-height: 20px; }
+.price-chart-layout[data-variant='b'] .chart-intermediate-change { font-size: 13px; }
+.price-chart-layout[data-variant='b'] :is(.chart-intermediate-label, .chart-current-price-badge, .chart-axis-hover-indicator) { border-radius: 8px; background: #fff; box-shadow: 0 5px 20px rgba(0,0,0,.1); }
+.price-chart-layout[data-variant='b'] .chart-axis-hover-indicator { transform: translateY(-50%); }
+.chart-intermediate-change { color: var(--chart-positive, #00a328); font: 400 15px/16px 'Neue Haas Unica W1G', 'Helvetica Neue', Arial, sans-serif; }
 .chart-intermediate-change.negative { color: #d92d20; }
 .chart-intermediate-change.neutral { color: #9299a2; }
 .chart-date-divider, .chart-date-tick { stroke: rgba(146,153,162,.25); stroke-width: 1; vector-effect: non-scaling-stroke; }
@@ -747,11 +801,6 @@ a { color: inherit; text-decoration: none; }
 .chart-milestone-date.start { color: #9299a2; transform: none; }
 .chart-milestone-date.current { transform: translateX(-100%); }
 .chart-milestone-date.muted { color: #9299a2; }
-@media (max-width: 640px) {
-  .chart-intermediate-label { gap: 0; }
-  .chart-intermediate-marker.start .chart-intermediate-label,
-  .chart-intermediate-marker.staggered .chart-intermediate-label { bottom: 48px; }
-}
 .liveline-badge {
   position: absolute;
   z-index: 3;
@@ -776,7 +825,7 @@ a { color: inherit; text-decoration: none; }
 }
 .liveline-badge time { color: #9299a2; font: 400 13px/18px 'Neue Haas Unica W1G', 'Helvetica Neue', Arial, sans-serif; }
 .liveline-badge strong { color: #fff; font: 500 13px/24px 'Chart Chip Medium', 'Helvetica Neue', Arial, sans-serif; }
-.liveline-badge-return { color: #00a328; font: 400 13px/16px 'Neue Haas Unica W1G', 'Helvetica Neue', Arial, sans-serif; }
+.liveline-badge-return { color: var(--chart-positive, #00a328); font: 400 13px/16px 'Neue Haas Unica W1G', 'Helvetica Neue', Arial, sans-serif; }
 .liveline-badge-return.negative { color: #d92d20; }
 .liveline-badge-return.neutral { color: #9299a2; }
 .liveline-badge.edge-start { --badge-x: 0; }
@@ -1233,14 +1282,14 @@ a { color: inherit; text-decoration: none; }
   padding: 20px 24px;
   border-radius: 24px;
   background: var(--soft);
-  color: #000;
+  color: #333333;
   font-size: 15px;
   line-height: 20px;
 }
 .figma-filter-group { display: flex; flex-direction: column; align-items: flex-start; }
 .figma-filter-group h3 {
   margin: 0 0 12px;
-  color: #000;
+  color: #333333;
   font-size: 17px;
   font-weight: 500;
   line-height: 24px;
@@ -1642,7 +1691,6 @@ button.figma-catalog-card-preview { cursor: pointer; }
   .price-title-second-line { display: block; }
   .chart-content { height: auto; }
   .price-section .chart-content { height: auto; }
-  .chart-preview-page .price-section .chart-content { height: 625px; }
   .price-analysis { height: auto; display: flex; flex-direction: column; gap: 20px; }
   .price-analysis.no-tabs { height: 100%; display: grid; }
   .asset-comparison { height: auto; gap: 22px; }
@@ -1663,25 +1711,29 @@ button.figma-catalog-card-preview { cursor: pointer; }
   .price-chart-layout.with-calculator { height: auto; }
   .price-chart-layout.with-calculator .price-chart-panel { height: 436px; }
   .price-chart-panel { grid-template-rows: auto minmax(0, 1fr) auto; gap: 28px; }
-  .liveline-chart { margin-top: 0; }
+  .liveline-chart { margin-top: 16px; }
   .price-window-row { height: auto; }
   .price-window-list { width: 100%; min-height: 32px; gap: 4px; }
   .price-window-button { min-height: 28px; flex: 1 0 auto; justify-content: center; gap: 8px; padding: 6px 10px; font-size: 13px; line-height: 16px; white-space: nowrap; }
   .price-window-button[data-active] { flex: 0 0 auto; padding-left: 10px; padding-right: 6px; }
   .price-window-button:not([data-active]):hover { background: var(--soft-hover); }
-  .price-window-return { min-height: 16px; height: 16px; padding: 0 4px; font-size: 11px; font-weight: 500; line-height: 13px; letter-spacing: .4px; }
+  .price-window-return { min-height: 16px; height: 16px; padding: 0 4px; font-size: 13px; font-weight: 500; line-height: 13px; letter-spacing: .4px; }
   .chart-intermediate-marker:not(.mobile-marker),
   .chart-intermediate-guide:not(.mobile-guide) { display: none; }
   .chart-current-point { left: -4px; width: 8px; height: 8px; }
   .chart-intermediate-point { left: -3.5px; top: -3.5px; width: 7px; height: 7px; }
-  .chart-intermediate-marker.mobile-marker .chart-intermediate-label { bottom: 16px; }
-  .chart-intermediate-marker.mobile-marker .chart-intermediate-label strong { font-size: 11px; font-weight: 500; line-height: 24px; }
-  .chart-intermediate-marker.mobile-marker .chart-intermediate-change { margin-top: -2px; font-size: 11px; line-height: 16px; }
-  .chart-intermediate-marker.start.mobile-marker .chart-intermediate-label { left: -12.5px; bottom: 16px; }
-  .chart-intermediate-marker.mobile-marker.label-below .chart-intermediate-label { top: 16px; bottom: auto; }
+  .chart-intermediate-marker.mobile-marker .chart-intermediate-label { left: -14px; bottom: 12px; }
+  .chart-intermediate-marker.mobile-marker .chart-intermediate-label strong { font-size: 13px; font-weight: 500; line-height: 24px; }
+  .chart-intermediate-marker.mobile-marker .chart-intermediate-change { margin-top: 0; font-size: 13px; line-height: 16px; }
+  .chart-intermediate-marker.start.mobile-marker .chart-intermediate-label strong { line-height: 20px; }
+  .chart-intermediate-marker.mobile-marker.label-below .chart-intermediate-label { top: 12px; bottom: auto; }
+  .price-chart-layout[data-variant='b'] .chart-intermediate-marker.mobile-marker .chart-intermediate-label { bottom: 19.5px; }
+  .price-chart-layout[data-variant='b'] .chart-intermediate-marker.mobile-marker.label-below .chart-intermediate-label { top: 19.5px; bottom: auto; }
   .chart-extreme-price { font-size: 13px; line-height: 24px; }
   .price-chart { cursor: crosshair; }
-  .chart-current-price-badge { transform: none; margin-left: 16px; padding-inline: 8px; font-size: 13px; line-height: 24px; }
+  .chart-current-price-badge { transform: none; margin-left: 16px; padding-inline: 8px; font-size: 15px; line-height: 24px; }
+  .price-chart-layout[data-variant='b'] .price-window-button[data-active] { padding-right: 10px; }
+  .price-chart-layout[data-variant='b'] .chart-intermediate-label strong { font-size: 13px; line-height: 20px; }
   .liveline-badge strong { font-size: 11px; line-height: 24px; }
   .liveline-badge-return, .liveline-badge time { font-size: 11px; line-height: 16px; }
   .chart-milestone-date { font-size: 11px; line-height: 16px; }
@@ -1817,14 +1869,15 @@ button.figma-catalog-card-preview { cursor: pointer; }
 
 /* Reveal guides after badges on initial entry; keep them visible during morphs. */
 .chart-guide-reveal { transform-box: fill-box; transform-origin: center top; transform: scaleY(1); transition: transform .42s cubic-bezier(.22,.61,.36,1) .32s; }
-.price-chart-layout:not([data-entry='done']) .chart-guide-reveal { transform: scaleY(0); transition: none; }
+.price-chart-layout:not([data-entry='done']):not([data-entry='current']) .chart-guide-reveal { transform: scaleY(0); transition: none; }
 @media (prefers-reduced-motion: reduce) {
   .chart-guide-reveal { transition: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .chart-intermediate-marker .chart-intermediate-point,
-  .chart-intermediate-label { transition: none; }
+  .chart-intermediate-label, .chart-intermediate-marker.is-scrubbing .chart-intermediate-label { transition: none; }
+  .chart-intermediate-marker.is-scrubbing .chart-intermediate-label { translate: 0 0; }
   .price-chart-layout[data-morphing] .chart-intermediate-label { translate: 0 0; }
 }
 
@@ -1836,7 +1889,7 @@ button.figma-catalog-card-preview { cursor: pointer; }
 /* Figma 5011:6930: compact tooltip, sized once by the widest short month. */
 .liveline-badge.point-anchored { padding: 8px; gap: 2px; background: #292929; color: #fff; border-radius: 8px; box-shadow: none; }
 .liveline-badge.point-anchored strong { color: #fff; font: 500 15px/20px 'Chart Chip Medium', 'Helvetica Neue', Arial, sans-serif; }
-.liveline-badge.point-anchored .liveline-badge-return { font-size: 13px; line-height: 20px; color: #00e037; }
+.liveline-badge.point-anchored .liveline-badge-return { font-size: 13px; line-height: 20px; color: var(--chart-hover-positive, #00e037); }
 .liveline-badge.point-anchored .liveline-badge-return.negative { color: #f66; }
 .liveline-badge.point-anchored .liveline-badge-return.neutral { color: #9299a2; }
 .liveline-badge.point-anchored time, .hover-date-width-probe { font: 400 11px/16px 'Neue Haas Unica W1G', 'Helvetica Neue', Arial, sans-serif; letter-spacing: .4px; font-variant-numeric: tabular-nums; }
@@ -1861,3 +1914,89 @@ button.figma-catalog-card-preview { cursor: pointer; }
 }
 
 .chart-timeline-labels { position: absolute; inset: auto 0 0; height: 24px; overflow: hidden; pointer-events: none; }
+
+.chart-axis-hover-content { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: max-content; flex-shrink: 0; }
+
+.chart-preview-page[data-show-data='false'] :is(.chart-intermediate-marker, .chart-intermediate-guide) { display: none; }
+
+/* Compact historical cells; current and hover cards retain their own sizing. */
+.price-chart-layout[data-variant='b'] .chart-intermediate-marker .chart-intermediate-label {
+  padding: 6px 8px;
+  gap: 2px;
+  min-height: 44px;
+  justify-content: center;
+}
+.price-chart-layout[data-variant='b'] .chart-intermediate-marker.start .chart-intermediate-label { min-height: 0; }
+.price-chart-layout[data-variant='b'] .chart-intermediate-marker .chart-intermediate-label strong {
+  font: 400 13px/16px 'Neue Haas Unica W1G', 'Helvetica Neue', Arial, sans-serif;
+}
+.price-chart-layout[data-variant='b'] .chart-intermediate-marker .chart-intermediate-change {
+  font: 400 11px/13px 'Neue Haas Unica W1G', 'Helvetica Neue', Arial, sans-serif;
+}
+.price-chart-layout[data-variant='b'][data-scrubbing] .chart-current-price-badge { opacity: 0; visibility: hidden; }
+
+.chart-axis-hover-sizing { display: grid; }
+.chart-axis-hover-sizing > :is(.chart-axis-hover-content, .chart-axis-hover-probe) { grid-area: 1 / 1; }
+.chart-axis-hover-probe { position: absolute; visibility: hidden; pointer-events: none; display: flex; flex-direction: column; gap: 4px; width: max-content; height: 0; overflow: hidden; }
+
+.price-chart-layout[data-variant='b'][data-scrubbing] .chart-current-point { opacity: 0; visibility: hidden; }
+
+/* First reveal: the shared overlay fades every label and date together. */
+.price-chart-layout[data-entry='current'] .chart-entry-overlays .chart-intermediate-label,
+.price-chart-layout[data-entry='current'] .chart-entry-overlays .chart-intermediate-point { transition: none; }
+.price-chart-layout[data-entry='current'] .chart-intermediate-marker.start .chart-intermediate-label { transition: opacity .38s ease-out; translate: 0 0; }
+@media (prefers-reduced-motion: reduce) {
+  .chart-entry-overlays, .chart-entry-svg-data { transition: none; }
+}
+
+ .chart-unavailable-body { min-height: 500px; width: min(720px, 100%); margin-inline: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 24px 16px; border-radius: 24px; }
+.chart-unavailable-illustration { width: 144px; height: 144px; margin-bottom: 32px; display: flex; align-items: center; justify-content: center; color: #9299a2; }
+.chart-unavailable-illustration img { display: block; max-width: none; }
+.chart-unavailable-body strong { max-width: 560px; color: #333333; font: 500 28px/32px 'T-Sans', 'Helvetica Neue', Arial, sans-serif; font-feature-settings: 'liga' 0; }
+.chart-unavailable-body p { margin: 16px 0 0; max-width: 560px; color: rgba(0,0,0,.54); font: 400 15px/24px 'Neue Haas Unica W1G', 'Helvetica Neue', Arial, sans-serif; }
+.chart-unavailable-body .chart-unavailable-retry { margin-top: 32px; min-height: 44px; height: auto; background: rgba(36,74,127,.06); color: #126df7; padding: 12px 16px; border: 0; border-radius: 8px; font: 400 15px/20px 'Neue Haas Unica W1G', 'Helvetica Neue', Arial, sans-serif; cursor: pointer; }
+.chart-unavailable-body button:disabled { opacity: .5; cursor: default; }
+.chart-unavailable-spinner { animation: price-window-spin 1s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .chart-unavailable-spinner { animation: none; } }
+
+.chart-unavailable-body { position: relative; }
+.chart-unavailable-retry { position: relative; }
+.chart-retry-spinner { position: absolute; inset: 0; margin: auto; }
+
+.chart-entry-periods { opacity: 0; visibility: hidden; transition: opacity .38s ease-out; }
+.price-chart-layout:is([data-entry='current'], [data-entry='done']) .chart-entry-periods { opacity: 1; visibility: visible; }
+@media (prefers-reduced-motion: reduce) { .chart-entry-periods { transition: none; } }
+
+/* Reserve the same geometry for loading, error, retry and the final chart. */
+.chart-unavailable-period-space { height: 44px; }
+.chart-unavailable-body { width: 100%; min-height: 0; height: 450px; margin-top: 24px; }
+.chart-unavailable-footer-space { visibility: hidden; }
+@media (max-width: 560px) {
+  .chart-unavailable-period-space { height: 32px; }
+  .chart-unavailable-body { margin-top: 16px; }
+}
+
+.chart-entry-disclaimer { opacity: 0; visibility: hidden; transition: opacity .38s ease-out; }
+.price-chart-layout:is([data-entry='current'], [data-entry='done']) .chart-entry-disclaimer { opacity: 1; visibility: visible; }
+@media (prefers-reduced-motion: reduce) { .chart-entry-disclaimer { transition: none; } }
+
+/* Error typography shares the same loaded faces as the chart. */
+.chart-unavailable-body strong,
+.chart-unavailable-body p,
+.chart-unavailable-body .chart-unavailable-retry { letter-spacing: 0; }
+
+/* A restrained spring on the right edge; text and the left anchor stay still. */
+.price-chart-layout[data-variant='b'] .chart-axis-hover-indicator {
+  transition: width 460ms cubic-bezier(.22, 1.18, .36, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .price-chart-layout[data-variant='b'] .chart-axis-hover-indicator { transition: none; }
+}
+
+/* Shared chart typography from webguides.md. */
+@font-face { font-family: 'T-Sans'; src: url('/fonts/T-Sans_Regular.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'T-Sans'; src: url('/fonts/T-Sans_Medium.woff2') format('woff2'); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: 'T-Sans'; src: url('/fonts/T-Sans_Bold.woff2') format('woff2'); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Neue Haas Unica W1G'; src: url('/fonts/neue-haas-unica-regular.ttf') format('opentype'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Neue Haas Unica W1G'; src: url('/fonts/neue-haas-unica-medium.ttf') format('opentype'); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Neue Haas Unica W1G'; src: url('/fonts/neue-haas-unica-bold.ttf') format('opentype'); font-weight: 700; font-style: normal; font-display: swap; }

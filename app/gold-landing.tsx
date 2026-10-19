@@ -1,10 +1,13 @@
 'use client';
 
-import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import Link from 'next/link';
+import { Button } from '@/components/ui/button';
+import NumberFlow from '@number-flow/react';
 import { goldPriceHistory } from './gold-price-history';
+import { effectiveGoldPrices, moscowDayTimestamp } from '@/lib/cbr-gold';
 import { AssetComparison } from './asset-comparison';
-import { Check, ChevronRight, Minus, Plus, Search, ShoppingCart, X } from 'lucide-react';
+import { LoaderCircle, Check, ChevronRight, Minus, Plus, Search, ShoppingCart, X } from 'lucide-react';
 import {
   Accordion,
   AccordionContent,
@@ -25,6 +28,67 @@ import {
 } from '@/components/ui/dialog';
 
 type GoldShape = 'account' | 'coin' | 'bar';
+const currentReturnTiming = { duration: 500, easing: 'cubic-bezier(.22,1,.36,1)' };
+const currentReturnOpacityTiming = { duration: 180, easing: 'ease-out' };
+const currentReturnFormat = { maximumFractionDigits: 0, signDisplay: 'exceptZero' as const, useGrouping: false };
+function createPeakBurst(x: number, y: number) {
+  const count = 8;
+  const particles = Array.from({ length: count }, () => {
+    const angle = -Math.PI / 2 + (Math.random() - .5) * Math.PI * 1.2;
+    const distance = 24 + Math.random() * 16;
+    return { x: Math.cos(angle) * distance, y: Math.sin(angle) * distance,
+      size: 3 + Math.random(), delay: Math.random() * 25,
+      duration: 600, originX: (Math.random() - .5) * 12, originY: (Math.random() - .5) * 4 };
+  });
+  return { id: performance.now(), x, y, particles };
+}
+
+function AnimatedCurrentReturn({ value }: { value: number }) {
+  return <NumberFlow className="chart-current-return-number" value={value} locales="ru-RU"
+    format={currentReturnFormat} suffix="%"
+    transformTiming={currentReturnTiming} spinTiming={currentReturnTiming}
+    opacityTiming={currentReturnOpacityTiming} respectMotionPreference />;
+}
+function AxisHoverBadge({ widthPrice, widthReturn, style, label, children }: { widthPrice?: string; widthReturn?: string; style: CSSProperties; label: string; children: ReactNode }) {
+  const shell = useRef<HTMLDivElement>(null);
+  const probe = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
+  const [contentWidth, setContentWidth] = useState<number | null>(null);
+  const [anchorWidth, setAnchorWidth] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    if (!widthPrice || !probe.current || !shell.current) return;
+    const measure = () => {
+      const css = getComputedStyle(shell.current!);
+      setAnchorWidth(probe.current!.getBoundingClientRect().width + parseFloat(css.paddingLeft) + parseFloat(css.paddingRight));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(probe.current);
+    return () => observer.disconnect();
+  }, [widthPrice, widthReturn]);
+  useLayoutEffect(() => {
+    if (!widthPrice || !content.current || !shell.current) return;
+    const measure = () => {
+      const css = getComputedStyle(shell.current!);
+      setContentWidth(content.current!.getBoundingClientRect().width + parseFloat(css.paddingLeft) + parseFloat(css.paddingRight));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(content.current);
+    return () => observer.disconnect();
+  }, [widthPrice]);
+  const anchoredStyle = widthPrice && anchorWidth !== null
+    ? { ...style, right: 'auto', left: `calc(100% - ${anchorWidth + Number(style.right ?? 0)}px)`, width: contentWidth ?? 'max-content' }
+    : style;
+  return <div ref={shell} className="chart-axis-hover-indicator" style={anchoredStyle} aria-label={label}>
+    {widthPrice && <div ref={probe} className="chart-axis-hover-probe" aria-hidden="true">
+      <span className="chart-axis-hover-price">{widthPrice}</span>
+      <span className="chart-axis-hover-return">{widthReturn}</span>
+    </div>}
+    <div ref={content} className="chart-axis-hover-content">{children}</div>
+  </div>;
+}
+
 type GoalId = 'regular' | 'gift' | 'reserve';
 
 type Product = {
@@ -89,7 +153,8 @@ const returnPoints = [94000, 91462, 77802, 78337, 127839, 144357, 129701, 139621
 const years = Array.from({ length: 16 }, (_, index) => 2011 + index);
 type GoldPricePoint = { time: number; value: number };
 const goldPriceOrigin = Date.UTC(2011, 0, 1);
-const initialGoldTimeline: GoldPricePoint[] = goldPriceHistory.map(([day, value]) => ({ time: goldPriceOrigin + day * 86400000, value }));
+const snapshotGoldPrices: Array<[number, number]> = goldPriceHistory.map(([day, value]) => [goldPriceOrigin + day * 86400000, value]);
+const getInitialGoldTimeline = (): GoldPricePoint[] => effectiveGoldPrices(snapshotGoldPrices, moscowDayTimestamp()).map(([time, value]) => ({ time, value }));
 const comparisonEndTime = Date.UTC(2026, 8, 24);
 const goldPriceWindowDefinitions = [
   { value: '1y', label: '1 год', months: 12 },
@@ -107,17 +172,11 @@ const formatMobileAxisDate = (time: number) => {
   const date = new Date(time);
   return `${String(date.getUTCMonth() + 1).padStart(2, '0')}.${String(date.getUTCFullYear()).slice(-2)}`;
 };
-function goldAxisMarks(start: number, end: number, months: number, compact: boolean) {
+const formatMobileHoverDay = (time: number) => `${String(new Date(time).getUTCDate()).padStart(2, '0')}.${formatMobileAxisDate(time)}`;
+function goldAxisMarks(start: number, end: number, compact: boolean) {
   const axisIntervals = compact ? 3 : 4;
-  const endDate = new Date(end);
   const middleMarks = Array.from({ length: axisIntervals - 1 }, (_, index) => {
-    let time = start + (end - start) * (index + 1) / axisIntervals;
-    if (!compact) {
-      const monthsBack = months * (axisIntervals - index - 1) / axisIntervals;
-      const targetMonth = new Date(Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth() - monthsBack, 1));
-      const lastDay = new Date(Date.UTC(targetMonth.getUTCFullYear(), targetMonth.getUTCMonth() + 1, 0)).getUTCDate();
-      time = Date.UTC(targetMonth.getUTCFullYear(), targetMonth.getUTCMonth(), Math.min(endDate.getUTCDate(), lastDay));
-    }
+    const time = start + (end - start) * (index + 1) / axisIntervals;
     return { time, label: compact ? formatMobileAxisDate(time) : formatMilestoneDate(time) };
   });
   return [{ time: start, label: compact ? formatMobileAxisDate(start) : formatMilestoneDate(start) }, ...middleMarks];
@@ -563,28 +622,56 @@ function smoothSlope(points: Array<{ x: number; y: number }>, index: number) {
   return (beforeWeight + afterWeight) / (beforeWeight / beforeSlope + afterWeight / afterSlope);
 }
 
-function smoothControls(points: Array<{ x: number; y: number }>, index: number) {
+// Fritsch–Carlson tangents adapted from Liveline, MIT © 2025–2026 Benji Taylor.
+// Source and license: public/licenses/liveline.txt.
+function livelineSlopes(points: Array<{ x: number; y: number }>) {
+  if (points.length < 2) return points.map(() => 0);
+  const secants = points.slice(0, -1).map((point, index) => {
+    const width = points[index + 1].x - point.x;
+    return width === 0 ? 0 : (points[index + 1].y - point.y) / width;
+  });
+  const slopes = points.map((_, index) => {
+    if (index === 0) return secants[0];
+    if (index === points.length - 1) return secants.at(-1)!;
+    const before = secants[index - 1], after = secants[index];
+    return before * after <= 0 ? 0 : (before + after) / 2;
+  });
+  for (let index = 0; index < secants.length; index++) {
+    const secant = secants[index];
+    if (secant === 0) { slopes[index] = 0; slopes[index + 1] = 0; continue; }
+    const alpha = slopes[index] / secant, beta = slopes[index + 1] / secant;
+    const magnitude = alpha * alpha + beta * beta;
+    if (magnitude > 9) {
+      const scale = 3 / Math.sqrt(magnitude);
+      slopes[index] = scale * alpha * secant;
+      slopes[index + 1] = scale * beta * secant;
+    }
+  }
+  return slopes;
+}
+
+function smoothControls(points: Array<{ x: number; y: number }>, index: number, slopes?: number[]) {
   const start = points[index], end = points[index + 1];
   const handle = (end.x - start.x) / 3;
   return {
     start,
     end,
-    controlStart: { x: start.x + handle, y: start.y + smoothSlope(points, index) * handle },
-    controlEnd: { x: end.x - handle, y: end.y - smoothSlope(points, index + 1) * handle },
+    controlStart: { x: start.x + handle, y: start.y + (slopes?.[index] ?? smoothSlope(points, index)) * handle },
+    controlEnd: { x: end.x - handle, y: end.y - (slopes?.[index + 1] ?? smoothSlope(points, index + 1)) * handle },
   };
 }
 
-function smoothPath(points: Array<{ x: number; y: number }>) {
+function smoothPath(points: Array<{ x: number; y: number }>, slopes: number[]) {
   if (points.length < 2) return '';
   let path = `M${points[0].x},${points[0].y}`;
   for (let index = 0; index < points.length - 1; index++) {
-    const { end, controlStart, controlEnd } = smoothControls(points, index);
+    const { end, controlStart, controlEnd } = smoothControls(points, index, slopes);
     path += ` C${controlStart.x},${controlStart.y} ${controlEnd.x},${controlEnd.y} ${end.x},${end.y}`;
   }
   return path;
 }
 
-function smoothPointAtX(points: Array<{ x: number; y: number }>, targetX: number) {
+function curvePointAtX(points: Array<{ x: number; y: number }>, targetX: number, slopes?: number[]) {
   if (points.length < 2) return points[0] ?? { x: targetX, y: 0 };
   let lowIndex = 0, highIndex = points.length - 1;
   while (highIndex - lowIndex > 1) {
@@ -593,7 +680,7 @@ function smoothPointAtX(points: Array<{ x: number; y: number }>, targetX: number
     else highIndex = middle;
   }
   const index = lowIndex;
-  const { start, end, controlStart, controlEnd } = smoothControls(points, index);
+  const { start, end, controlStart, controlEnd } = smoothControls(points, index, slopes);
   const cubic = (a: number, b: number, c: number, d: number, t: number) => {
     const inverse = 1 - t;
     return inverse ** 3 * a + 3 * inverse ** 2 * t * b + 3 * inverse * t ** 2 * c + t ** 3 * d;
@@ -601,6 +688,81 @@ function smoothPointAtX(points: Array<{ x: number; y: number }>, targetX: number
   // With the horizontal controls at one-third and two-thirds, x is linear in t.
   const t = Math.max(0, Math.min(1, (targetX - start.x) / (end.x - start.x)));
   return { x: targetX, y: cubic(start.y, controlStart.y, controlEnd.y, end.y, t) };
+}
+
+// Keep the earlier interpolation for sampling so a visual spline change does
+// not choose a different set of historical nodes or alter price calculations.
+function samplePointAtX(points: Array<{ x: number; y: number }>, targetX: number) {
+  return curvePointAtX(points, targetX);
+}
+
+function smoothPointAtX(points: Array<{ x: number; y: number }>, targetX: number, slopes: number[]) {
+  return curvePointAtX(points, targetX, slopes);
+}
+
+function cubicDifferencePeak(values: number[]) {
+  const [d, first, second, last] = values;
+  const a = 4.5 * (last - 3 * second + 3 * first - d);
+  const b = 4.5 * (second - 2 * first + d) - a;
+  const c = 3 * (first - d) - a / 9 - b / 3;
+  const candidates = [0, 1];
+  if (Math.abs(a) < 1e-8) {
+    if (Math.abs(b) > 1e-8) candidates.push(-c / (2 * b));
+  } else {
+    const discriminant = 4 * b * b - 12 * a * c;
+    if (discriminant >= 0) {
+      const root = Math.sqrt(discriminant);
+      candidates.push((-2 * b + root) / (6 * a), (-2 * b - root) / (6 * a));
+    }
+  }
+  return Math.max(...candidates.filter((t) => t >= 0 && t <= 1)
+    .map((t) => Math.abs(((a * t + b) * t + c) * t + d)));
+}
+
+function simplifyChartSamples(
+  baseline: Array<{ x: number; y: number }>,
+  mandatory: Set<number>,
+  windows: Array<{ start: number; range: number }>,
+  options: { maximumError?: number; visualSpline?: boolean } = {},
+) {
+  // One immutable reference for every removal prevents cumulative drift.
+  // The default sampling budget is 2px in a 500px plotting area.
+  const maximumError = options.maximumError ?? 2 / 500;
+  const baselineSlopes = options.visualSpline ? livelineSlopes(baseline) : undefined;
+  const fallbackRange = windows.at(-1)!.range;
+  const probes = baseline.slice(0, -1).map((point, index) => {
+    const end = baseline[index + 1];
+    const applicableRanges = windows.filter((window) => point.x >= window.start).map((window) => window.range);
+    const range = applicableRanges.length ? Math.min(...applicableRanges) : fallbackRange;
+    const positions = [point.x, point.x + (end.x - point.x) / 3, point.x + 2 * (end.x - point.x) / 3, end.x];
+    return { positions, values: positions.map((x) => curvePointAtX(baseline, x, baselineSlopes).y), range };
+  });
+  const deviation = (candidate: Array<{ x: number; y: number }>, limit: number) => {
+    let largest = 0;
+    const slopes = options.visualSpline ? livelineSlopes(candidate) : undefined;
+    for (const probe of probes) {
+      // Both curves are cubic on each original interval. Endpoints and
+      // derivative roots find the maximum error between nodes as well.
+      const difference = probe.positions.map((x, index) => curvePointAtX(candidate, x, slopes).y - probe.values[index]);
+      largest = Math.max(largest, cubicDifferencePeak(difference) / probe.range);
+      if (largest > limit) return largest;
+    }
+    return largest;
+  };
+  let retained = baseline;
+  while (retained.length > mandatory.size) {
+    let best: Array<{ x: number; y: number }> | null = null;
+    let bestError = maximumError;
+    for (let index = 1; index < retained.length - 1; index++) {
+      if (mandatory.has(retained[index].x)) continue;
+      const candidate = [...retained.slice(0, index), ...retained.slice(index + 1)];
+      const error = deviation(candidate, bestError);
+      if (error <= bestError) { best = candidate; bestError = error; }
+    }
+    if (!best) break;
+    retained = best;
+  }
+  return retained;
 }
 
 function goldQuoteAtOrBefore(time: number, timeline: GoldPricePoint[]) {
@@ -612,6 +774,32 @@ function goldQuoteAtOrBefore(time: number, timeline: GoldPricePoint[]) {
     else high = middle;
   }
   return timeline[high].time <= time ? timeline[high] : timeline[low];
+}
+
+function goldHoverQuotes(sourceQuotes: GoldPricePoint[], start: number, anchors: GoldPricePoint[]) {
+  const quotes = new Map<number, GoldPricePoint>();
+  const day = 86_400_000;
+  const dayKey = (time: number) => Math.floor(time / day);
+  // Every calendar day is selectable, including days carrying the last CBR price.
+  for (let time = Math.ceil(start / day) * day; time <= sourceQuotes.at(-1)!.time; time += day) {
+    quotes.set(dayKey(time), { time, value: goldQuoteAtOrBefore(time, sourceQuotes).value });
+  }
+  // Keep permanent milestones at their exact position and price.
+  for (const anchor of anchors) quotes.set(dayKey(anchor.time), anchor);
+  return [...quotes.values()].sort((a, b) => a.time - b.time);
+}
+
+function nearestGoldQuote(time: number, quotes: GoldPricePoint[]) {
+  if (quotes.length === 0) return null;
+  let low = 0, high = quotes.length - 1;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (quotes[middle].time < time) low = middle + 1;
+    else high = middle;
+  }
+  const after = quotes[low];
+  const before = quotes[Math.max(0, low - 1)];
+  return time - before.time <= after.time - time ? before : after;
 }
 
 function goldWindowStart(endTime: number, months: number, timeline: GoldPricePoint[]) {
@@ -699,20 +887,117 @@ function MobileReturnCalculator({ priceRatio, principal }: { priceRatio: number;
   );
 }
 
+type PriceChartVariant = 'a' | 'b' | 'c' | 'd';
+
 type PriceChartProps = {
   showMobileCalculator?: boolean;
+  variant?: PriceChartVariant;
   period?: string;
   onPeriodChange?: (period: string) => void;
   timeline?: GoldPricePoint[];
 };
 
-function PriceChart({ showMobileCalculator = false, period, onPeriodChange, timeline }: PriceChartProps) {
+function PriceChart(props: PriceChartProps) {
+  const [simulateEmpty, setSimulateEmpty] = useState<boolean | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [retrying, setRetrying] = useState(true);
+  const [spinner, setSpinner] = useState(false);
+  const [recovered, setRecovered] = useState<GoldPricePoint[] | null>(null);
+  useEffect(() => { setSimulateEmpty(new URLSearchParams(window.location.search).get('empty') === '1'); }, []);
+  const empty = simulateEmpty === null || simulateEmpty || props.timeline?.length === 0;
+  useEffect(() => {
+    if (!empty || simulateEmpty === null) return;
+    let disposed = false;
+    const controller = new AbortController();
+    setRetrying(true);
+    setSpinner(false);
+    // Start loading the exact error fonts while the data request is pending.
+    // Reveal only after they settle, so fallback metrics never flash on screen.
+    const errorFontsReady = Promise.allSettled([
+      document.fonts.load('500 28px "T-Sans"', 'Не загрузилось'),
+      document.fonts.load('400 15px "Neue Haas Unica W1G"', 'Попробуйте снова Повторить'),
+    ]);
+    let shownAt = 0;
+    const show = window.setTimeout(() => { shownAt = performance.now(); setSpinner(true); }, 300);
+    const timeout = window.setTimeout(() => controller.abort(), 12000);
+    let finishTimer: ReturnType<typeof setTimeout> | undefined;
+    const run = async () => {
+      let prices: Array<[number, number]> = [];
+      try {
+        if (simulateEmpty) {
+          await new Promise<void>(resolve => { finishTimer = setTimeout(resolve, new URLSearchParams(window.location.search).get('slow') === '5' ? 5000 : 1200); });
+          // Preview: fail once, then restore the normal chart and its live refresh.
+          if (attempt > 0) {
+            const byDate = new Map(getInitialGoldTimeline().map(point => [point.time, point.value]));
+            try {
+              const response = await fetch('/api/gold-prices', { cache: 'no-store', signal: controller.signal });
+              if (response.ok) {
+                const data = await response.json() as { prices?: Array<[number, number]> };
+                for (const [time, value] of effectiveGoldPrices(Array.isArray(data.prices) ? data.prices : [], moscowDayTimestamp())) byDate.set(time, value);
+              }
+            } catch { /* The preview can still recover with the verified snapshot. */ }
+            prices = [...byDate].sort((a, b) => a[0] - b[0]);
+          }
+        } else {
+          const response = await fetch('/api/gold-prices', { cache: 'no-store', signal: controller.signal });
+          if (response.ok) {
+            const data = await response.json() as { prices?: Array<[number, number]> };
+            prices = effectiveGoldPrices(Array.isArray(data.prices) ? data.prices : [], moscowDayTimestamp());
+          }
+        }
+      } catch { /* Keep the error state available for another attempt. */ }
+      clearTimeout(timeout);
+      if (prices.length < 2) await errorFontsReady;
+      clearTimeout(show);
+      if (disposed) return;
+      const finish = () => {
+        if (disposed) return;
+        setRetrying(false);
+        setSpinner(false);
+        if (prices.length > 1) setRecovered(prices.map(([time, value]) => ({ time, value })));
+      };
+      const remaining = shownAt ? Math.max(0, 500 - (performance.now() - shownAt)) : 0;
+      if (remaining) finishTimer = setTimeout(finish, remaining); else finish();
+    };
+    void run();
+    return () => { disposed = true; controller.abort(); clearTimeout(show); clearTimeout(timeout); clearTimeout(finishTimer); };
+  }, [empty, simulateEmpty, attempt]);
+  if (empty && !recovered) return <div className="chart-unavailable price-chart-panel" style={{ '--chart-line': props.variant === 'a' ? '#36c578' : '#428bf9' } as CSSProperties}>
+    <div className="chart-unavailable-period-space" aria-hidden="true" />
+    <div className="chart-unavailable-body" aria-busy={retrying}>
+      {retrying && attempt === 0 ? spinner && <ChartLoadingLine /> : <>
+        <div className="chart-unavailable-illustration"><img src="/chart-error.svg" alt="" /></div>
+        <strong>Не загрузилось</strong>
+        <p>Попробуйте снова</p>
+        <Button variant="secondary" className="chart-unavailable-retry" type="button" disabled={retrying} aria-label={retrying ? 'Загрузка' : 'Повторить'} onClick={() => { setRetrying(true); setAttempt(value => value + 1); }}>
+          <span style={{ visibility: retrying && spinner ? 'hidden' : 'visible' }}>Повторить</span>
+          {retrying && spinner && <LoaderCircle className="chart-unavailable-spinner chart-retry-spinner" size={20} aria-hidden="true" />}
+        </Button>
+      </>}
+    </div>
+    <p className="price-chart-disclaimer chart-unavailable-footer-space" aria-hidden="true">{props.variant === 'b'
+      ? 'По данным Банка России за 1 грамм. В выходные показываем цену, установленную в последний рабочий день — обычно в пятницу'
+      : 'В выходные показываем цену, установленную Банком России в последний рабочий день — обычно в пятницу'}</p>
+  </div>;
+  return <LoadedPriceChart {...props} timeline={simulateEmpty ? undefined : recovered ?? props.timeline} initialTimeline={simulateEmpty ? recovered ?? undefined : undefined} />;
+}
+
+function ChartLoadingLine() {
+  return <div className="chart-loading" role="status" aria-label="Загружаются цены золота">
+    <svg className="chart-loading-line" viewBox="0 0 700 40" preserveAspectRatio="none" aria-hidden="true">
+      <path d="M0 20 C58 20 58 10 116 10 S174 30 232 30 S290 10 348 10 S406 30 464 30 S522 10 580 10 S642 20 700 20" />
+    </svg>
+  </div>;
+}
+
+function LoadedPriceChart({ showMobileCalculator = false, variant = 'a', period, onPeriodChange, timeline, initialTimeline }: PriceChartProps & { initialTimeline?: GoldPricePoint[] }) {
   const svgId = useId().replace(/:/g, '');
   const fillId = `${svgId}-gold-price-fill`;
   const scrubId = `${svgId}-gold-price-scrub`;
   const plotId = `${svgId}-gold-price-plot`;
   const entryId = `${svgId}-gold-price-entry`;
-  const [fetchedGoldState, setFetchedGoldState] = useState({ timeline: initialGoldTimeline, ready: false });
+  const [refreshFailed, setRefreshFailed] = useState(false);
+  const [fetchedGoldState, setFetchedGoldState] = useState(() => ({ timeline: initialTimeline ?? getInitialGoldTimeline(), ready: Boolean(initialTimeline) }));
   const goldTimeline = timeline ?? fetchedGoldState.timeline;
   const liveDataReady = timeline !== undefined || fetchedGoldState.ready;
   const tangents = useMemo(() => goldTangents(goldTimeline), [goldTimeline]);
@@ -731,19 +1016,36 @@ function PriceChart({ showMobileCalculator = false, period, onPeriodChange, time
     const firstTime = goldTimeline[0].time;
     const day = 24 * 60 * 60 * 1000;
     const times = [firstTime, endTime];
+    const mandatoryTimes = new Set(times);
     for (let time = endTime; time > firstTime;) {
       const age = endTime - time;
       const step = age < 180 * day ? 20 : age < 365 * day ? 30 : age < 5 * 365 * day ? 90 : 180;
       time -= step * day;
       if (time > firstTime) times.push(time);
     }
-    for (const option of goldPriceWindows) {
+    const windows = goldPriceWindows.map((option) => {
       const extrema = goldPriceExtrema(option.start, goldTimeline, tangents);
       times.push(option.start, extrema.minimumTime, extrema.maximumTime);
-    }
-    return [...new Set(times)].sort((a, b) => a - b);
+      for (const time of [option.start, extrema.minimumTime, extrema.maximumTime]) mandatoryTimes.add(time);
+      const minimum = Math.floor(extrema.minimum / 100) * 100;
+      const maximum = Math.max(minimum + 100, Math.ceil(extrema.maximum / 100) * 100);
+      return { start: (option.start - firstTime) / day, range: maximum - minimum };
+    });
+    const baseline = [...new Set(times)].sort((a, b) => a - b)
+      .map((time) => ({ x: (time - firstTime) / day, y: goldPriceAt(time, goldTimeline, tangents) }));
+    const mandatory = new Set([...mandatoryTimes].map((time) => (time - firstTime) / day));
+    const retained = simplifyChartSamples(baseline, mandatory, windows);
+    // Visual simplification does not change selectable source prices.
+    // Limit its change from the previous FC curve to 7px
+    // in a 500px plot and keep every protected start, endpoint and extremum.
+    return simplifyChartSamples(retained, mandatory, windows, { maximumError: 7 / 500, visualSpline: true })
+      .map((point) => firstTime + point.x * day);
   }, [goldTimeline, endTime, goldPriceWindows, tangents]);
-  const [selected, setSelected] = useState<{ x: number; y: number; time: number; value: number; cursorX: number; cursorY: number; badgeAbove: boolean } | null>(null);
+  const [hoverSelection, setSelected] = useState<{ x: number; y: number; time: number; value: number; cursorX: number; cursorY: number; badgeAbove: boolean } | null>(null);
+  const hoverEnabled = variant !== 'd';
+  const axisHoverEnabled = variant === 'b' || variant === 'c';
+  const selected = hoverEnabled ? hoverSelection : null;
+  useEffect(() => setSelected(null), [variant]);
   const [ownActivePeriod, setOwnActivePeriod] = useState('5y');
   const activePeriod = period ?? ownActivePeriod;
   const [showLoader, setShowLoader] = useState(false);
@@ -769,28 +1071,47 @@ function PriceChart({ showMobileCalculator = false, period, onPeriodChange, time
     const timer = window.setTimeout(finish, remaining);
     return () => window.clearTimeout(timer);
   }, [liveDataReady]);
-  const [entryPhase, setEntryPhase] = useState<'waiting' | 'drawing' | 'done'>('waiting');
-  const [startDateTransition, setStartDateTransition] = useState<{ from: number; to: number; viewFrom: number; fromMonths: number } | null>(null);
+  const [entryPhase, setEntryPhase] = useState<'waiting' | 'drawing' | 'current' | 'done'>('waiting');
+  const [startDateTransition, setStartDateTransition] = useState<{ from: number; to: number; viewFrom: number } | null>(null);
   const chartRef = useRef<HTMLDivElement>(null);
   const [chartClientWidth, setChartClientWidth] = useState(1000);
+  const [chartClientHeight, setChartClientHeight] = useState(400);
   const [currentBadgeWidth, setCurrentBadgeWidth] = useState(90);
   const [hoverBadgeWidth, setHoverBadgeWidth] = useState(112);
   const [mobileViewport, setMobileViewport] = useState(false);
   const [view, setView] = useState<{ start: number; minimum?: number; maximum?: number }>(() => {
-    const startingTimeline = timeline ?? initialGoldTimeline;
+    const startingTimeline = timeline ?? fetchedGoldState.timeline;
     const months = goldPriceWindowDefinitions.find((option) => option.value === (period ?? '5y'))?.months ?? 60;
     const start = goldWindowStart(startingTimeline.at(-1)!.time, months, startingTimeline);
     return { start };
   });
   const viewRef = useRef(view);
   const activeOption = goldPriceWindows.find((option) => option.value === activePeriod)!;
+  const periodPeak = useMemo(() => goldPriceExtrema(activeOption.start, goldTimeline, tangents), [activeOption.start, goldTimeline, tangents]);
+  const [peakBurst, setPeakBurst] = useState<ReturnType<typeof createPeakBurst> | null>(null);
+  const peakEntered = useRef(false);
+  const lastPeakBurstAt = useRef(-Infinity);
+  useEffect(() => {
+    peakEntered.current = false;
+    lastPeakBurstAt.current = -Infinity;
+    setPeakBurst(null);
+  }, [variant, activePeriod, goldTimeline, chartClientWidth, chartClientHeight]);
+  useEffect(() => {
+    if (!selected) peakEntered.current = false;
+  }, [selected]);
+  useEffect(() => {
+    if (!peakBurst) return;
+    const timer = window.setTimeout(() => setPeakBurst(null), 1300);
+    return () => window.clearTimeout(timer);
+  }, [peakBurst]);
   const comparisonStartTime = goldWindowStart(comparisonEndTime, activeOption.months, goldTimeline);
   const comparisonGoldReturn = (goldPriceAt(comparisonEndTime, goldTimeline, tangents) / goldPriceAt(comparisonStartTime, goldTimeline, tangents) - 1) * 100;
-  const left = 8, width = 1000, top = 16, bottom = 54, height = 400;
-  const badgeGap = mobileViewport ? 16 : 40;
-  // The badge ends 8px past the right-aligned minimum and maximum labels.
-  // Measuring its width also lets the graph use all available horizontal space.
-  const right = (currentBadgeWidth + badgeGap - 8) * width / chartClientWidth;
+  // The upper price label is gone; keep only a small inset for the line stroke.
+  const left = 8, width = 1000, top = 2, bottom = 54, height = 400;
+  const badgeGap = mobileViewport ? 16 : 20;
+  // On mobile, align the badge's edge with the section's 16px screen inset.
+  // Preserve the desktop offset while reserving only the measured badge width.
+  const right = (currentBadgeWidth + badgeGap - (mobileViewport ? 0 : 8)) * width / chartClientWidth;
   const pointTimes = [
     view.start,
     ...chartSampleTimes.filter((time) => time > view.start && time < endTime),
@@ -808,6 +1129,7 @@ function PriceChart({ showMobileCalculator = false, period, onPeriodChange, time
   const y = (value: number) => top + (height - top - bottom) * (axisMaximum - value) / (axisMaximum - axisMinimum);
   const currentPrice = goldTimeline.at(-1)!.value;
   const priceRatio = currentPrice / goldPriceAt(activeOption.start, goldTimeline, tangents);
+  const currentReturnPercent = Math.round((priceRatio - 1) * 100);
   const isProfitable = priceRatio > 1;
   const points = pointTimes.map((time, index) => ({
     x: left + (width - left - right) * (time - view.start) / (endTime - view.start),
@@ -823,12 +1145,14 @@ function PriceChart({ showMobileCalculator = false, period, onPeriodChange, time
     x: left + (width - left - right) * (time - view.start) / (endTime - view.start),
     y: y(goldPriceAt(time, goldTimeline, tangents)),
   }));
+  const visualSlopes = livelineSlopes(visualPoints);
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
     const badge = chart.querySelector('.chart-current-price-badge');
     const observer = new ResizeObserver(([entry]) => {
       setChartClientWidth(Math.max(entry.contentRect.width, 1));
+      setChartClientHeight(Math.max(entry.contentRect.height, 1));
       setMobileViewport(window.matchMedia('(max-width: 560px)').matches);
       setSelected(null);
     });
@@ -865,39 +1189,68 @@ function PriceChart({ showMobileCalculator = false, period, onPeriodChange, time
     return () => observer.disconnect();
   }, [entryPhase, liveDataReady, loaderReady]);
   useEffect(() => {
-    if (entryPhase !== 'drawing') return;
-    const completionTimer = window.setTimeout(() => setEntryPhase('done'), 1700);
+    if (entryPhase !== 'drawing' && entryPhase !== 'current') return;
+    const completionTimer = window.setTimeout(
+      () => setEntryPhase(entryPhase === 'drawing' ? 'current' : 'done'),
+      entryPhase === 'drawing' ? 1700 : 400,
+    );
     return () => window.clearTimeout(completionTimer);
   }, [entryPhase]);
   useEffect(() => {
     if (timeline) return;
-    const controller = new AbortController();
+    let disposed = false;
+    let inFlight = false;
+    let firstRefresh = true;
+    let controller: AbortController | undefined;
     let delayTimer: ReturnType<typeof setTimeout> | undefined;
-    const delay = new URLSearchParams(window.location.search).get('slow') === '5' ? 5000 : 0;
-    const minimumDelay = new Promise<void>((resolve) => { delayTimer = setTimeout(resolve, delay); });
-    const request = fetch('/api/gold-prices', { signal: controller.signal })
-      .then((response): Promise<{ prices?: Array<[number, number]> } | null> => response.ok ? response.json() : Promise.resolve(null))
-      .catch(() => null);
-    Promise.all([request, minimumDelay]).then(([data]) => data)
-      .then((data: { prices?: Array<[number, number]> } | null) => {
-        if (controller.signal.aborted) return;
-        if (!data?.prices?.length) {
-          setFetchedGoldState((current) => ({ ...current, ready: true }));
-          return;
+    const params = new URLSearchParams(window.location.search);
+    const simulateFailure = params.get('failure') === '1';
+    const delay = params.get('slow') === '5' ? 5000 : simulateFailure ? 1200 : 0;
+    const refresh = async () => {
+      if (disposed || inFlight) return;
+      inFlight = true;
+      controller = new AbortController();
+      const requestTimeout = setTimeout(() => controller?.abort(), 12000);
+      const minimumDelay = new Promise<void>((resolve) => {
+        delayTimer = setTimeout(resolve, firstRefresh ? delay : 0);
+      });
+      firstRefresh = false;
+      const request = simulateFailure ? Promise.resolve(null) : fetch('/api/gold-prices', { cache: 'no-store', signal: controller.signal })
+        .then((response): Promise<{ prices?: Array<[number, number]> } | null> => response.ok ? response.json() : Promise.resolve(null))
+        .catch(() => null);
+      const [data] = await Promise.all([request, minimumDelay]);
+      clearTimeout(requestTimeout);
+      inFlight = false;
+      if (disposed) return;
+      const effectiveThrough = moscowDayTimestamp();
+      // Bundled verified quotes also advance on their effective date if CBR is unavailable.
+      const fallback = effectiveGoldPrices(snapshotGoldPrices, effectiveThrough);
+      const updates = effectiveGoldPrices(Array.isArray(data?.prices) ? data.prices : [], effectiveThrough);
+      setRefreshFailed(updates.length === 0);
+      setFetchedGoldState((current) => {
+        const byDate = new Map(fallback);
+        for (const point of current.timeline) if (point.time <= effectiveThrough) byDate.set(point.time, point.value);
+        for (const [time, value] of updates) byDate.set(time, value);
+        const next = Array.from(byDate, ([time, value]) => ({ time, value })).sort((a, b) => a.time - b.time);
+        if (next.length === current.timeline.length && next.every((point, index) => point.time === current.timeline[index].time && point.value === current.timeline[index].value)) {
+          return current.ready ? current : { ...current, ready: true };
         }
-        setFetchedGoldState((current) => {
-          const byDate = new Map(current.timeline.map((point) => [point.time, point.value]));
-          for (const [time, value] of data.prices!) {
-            if (Number.isFinite(time) && Number.isFinite(value) && value > 0) byDate.set(time, value);
-          }
-          const next = Array.from(byDate, ([time, value]) => ({ time, value })).sort((a, b) => a.time - b.time);
-          return { timeline: next, ready: true };
-        });
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setFetchedGoldState((current) => ({ ...current, ready: true }));
-      }); // Keep the last verified CBR snapshot if the live feed is unavailable.
-    return () => { controller.abort(); clearTimeout(delayTimer); };
+        return { timeline: next, ready: true };
+      });
+    };
+    const resume = () => { if (document.visibilityState === 'visible') void refresh(); };
+    void refresh();
+    const refreshTimer = setInterval(resume, 5 * 60 * 1000);
+    window.addEventListener('focus', resume);
+    document.addEventListener('visibilitychange', resume);
+    return () => {
+      disposed = true;
+      controller?.abort();
+      clearTimeout(delayTimer);
+      clearInterval(refreshTimer);
+      window.removeEventListener('focus', resume);
+      document.removeEventListener('visibilitychange', resume);
+    };
   }, [timeline]);
   useEffect(() => {
     const targetTimes = [activeOption.start, ...chartSampleTimes.filter((time) => time > activeOption.start && time < endTime), endTime];
@@ -949,34 +1302,38 @@ function PriceChart({ showMobileCalculator = false, period, onPeriodChange, time
     if (period === activePeriod) return;
     const nextOption = goldPriceWindows.find((option) => option.value === period);
     if (!nextOption) return;
-    setStartDateTransition({ from: activeOption.start, to: nextOption.start, viewFrom: viewRef.current.start, fromMonths: activeOption.months });
-    if (entryPhase === 'drawing') setEntryPhase('done');
+    setStartDateTransition({ from: activeOption.start, to: nextOption.start, viewFrom: viewRef.current.start });
+    if (entryPhase === 'drawing' || entryPhase === 'current') setEntryPhase('done');
     if (onPeriodChange) onPeriodChange(period);
     else setOwnActivePeriod(period);
     setSelected(null);
   };
   const dateDividerY = height - 34;
-  const linePath = smoothPath(visualPoints), baseline = dateDividerY;
+  const linePath = smoothPath(visualPoints, visualSlopes), baseline = dateDividerY;
   const areaPath = `${linePath} L${points.at(-1)!.x},${baseline} L${visualPoints[0].x},${baseline} Z`;
   const latestPoint = points.at(-1)!;
   const entryClipWidth = latestPoint.x - visualStartX + 4;
   const entryStartScale = (left - visualStartX + 2) / entryClipWidth;
-  const markersForCount = (count: number) => Array.from({ length: count }, (_, index) => {
-    const fraction = (index + 1) / (count + 1);
-    const time = view.start + (endTime - view.start) * fraction;
+  const markerQuotes = useMemo(() => {
+    const count = mobileViewport ? 2 : 3;
+    return Array.from({ length: count }, (_, index) => {
+      const fraction = (index + 1) / (count + 1);
+      const time = view.start + (endTime - view.start) * fraction;
+      return { fraction, time, value: goldQuoteAtOrBefore(time, goldTimeline).value };
+    });
+  }, [mobileViewport, view.start, endTime, goldTimeline]);
+  const visibleMarkers = markerQuotes.map(({ fraction, time, value }) => {
     const x = left + (latestPoint.x - left) * fraction;
-    const value = goldQuoteAtOrBefore(time, goldTimeline).value;
     const change = goldReturnPercent(value, sampledPrices[0]);
-    return { x, y: smoothPointAtX(visualPoints, x).y, time, value, change };
+    return { x, y: smoothPointAtX(visualPoints, x, visualSlopes).y, time, value, change };
   });
-  const intermediateMarkers = !mobileViewport && !startDateTransition
-    ? goldAxisMarks(view.start, endTime, activeOption.months, false).slice(1).map(({ time }) => {
-      const x = left + (latestPoint.x - left) * (time - view.start) / (endTime - view.start);
-      const value = goldQuoteAtOrBefore(time, goldTimeline).value;
-      return { x, y: smoothPointAtX(visualPoints, x).y, time, value, change: goldReturnPercent(value, sampledPrices[0]) };
-    })
-    : markersForCount(3);
-  const visibleMarkers = mobileViewport ? markersForCount(2) : intermediateMarkers;
+  const startingPrice = sampledPrices[0];
+  // Reuse the full daily grid during pointer movement; selection is a binary search.
+  const hoverQuotes = useMemo(() => goldHoverQuotes(goldTimeline, view.start, [
+    { time: view.start, value: startingPrice },
+    ...markerQuotes,
+    { time: endTime, value: currentPrice },
+  ]), [goldTimeline, view.start, startingPrice, markerQuotes, endTime, currentPrice]);
   const transitionProgress = startDateTransition ? (() => {
     const from = Math.log(endTime - startDateTransition.viewFrom);
     const to = Math.log(endTime - startDateTransition.to);
@@ -984,9 +1341,9 @@ function PriceChart({ showMobileCalculator = false, period, onPeriodChange, time
   })() : 1;
   const axisIntervals = mobileViewport ? 3 : 4;
   const compactDates = mobileViewport;
-  const targetDateMarks = goldAxisMarks(activeOption.start, endTime, activeOption.months, compactDates);
+  const targetDateMarks = goldAxisMarks(activeOption.start, endTime, compactDates);
   const sourceDateMarks = startDateTransition
-    ? goldAxisMarks(startDateTransition.from, endTime, startDateTransition.fromMonths, compactDates)
+    ? goldAxisMarks(startDateTransition.from, endTime, compactDates)
     : targetDateMarks;
   const projectDate = (time: number) => left + (latestPoint.x - left) * (time - view.start) / (endTime - view.start);
   const dateEdgeOpacity = (x: number) => Math.max(0, Math.min(1,
@@ -1007,13 +1364,15 @@ function PriceChart({ showMobileCalculator = false, period, onPeriodChange, time
     return [{ ...previous, key: `source-${index}`, index, x: sourceX, opacity: Math.max(0, 1 - transitionProgress / .65) * dateEdgeOpacity(sourceX) * dateSpacingOpacity(startDateTransition!.from), outgoing: true }, current];
   });
   const currentGuideEndX = latestPoint.x + badgeGap * width / chartClientWidth;
-  const highLabelY = y(axisMaximum);
-  const lowLabelY = y(axisMinimum);
   const scrubX = selected?.x ?? width;
   const hasFadedRight = selected !== null && selected.x < latestPoint.x;
   const selectedReturnPercent = selected ? goldReturnPercent(selected.value, sampledPrices[0]) : 0;
+  const hoverDateEdgeMargin = mobileViewport ? 32 : 52;
+  const hoverDateEdge = selected && selected.x * chartClientWidth / width < hoverDateEdgeMargin
+    ? ' start' : selected && (latestPoint.x - selected.x) * chartClientWidth / width < hoverDateEdgeMargin ? ' current' : '';
+  const selectedDateLabel = selected ? (mobileViewport ? formatMobileHoverDay(selected.time) : formatCurrentAxisDate(selected.time)) : '';
   const updateSelection = (event: React.PointerEvent<SVGSVGElement>) => {
-    if (entryPhase !== 'done') return;
+    if (!hoverEnabled || entryPhase !== 'done') return;
     const rect = event.currentTarget.getBoundingClientRect();
     const cursorX = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
     const cursorY = Math.max(0, Math.min(rect.height, event.clientY - rect.top));
@@ -1024,53 +1383,75 @@ function PriceChart({ showMobileCalculator = false, period, onPeriodChange, time
       return;
     }
     const targetX = Math.max(left, chartX);
-    const anchors = [
-      { x: left, time: view.start, value: sampledPrices[0] },
-      ...visibleMarkers,
-    ];
-    const nearest = anchors.reduce((closest, anchor) =>
-      Math.abs(anchor.x - targetX) < Math.abs(closest.x - targetX) ? anchor : closest);
-    const snapped = event.pointerType === 'mouse' && Math.abs(nearest.x - targetX) <= 8 * width / rect.width ? nearest : null;
-    const selectedX = snapped?.x ?? targetX;
-    const point = smoothPointAtX(visualPoints, selectedX);
-    const selectedTime = snapped?.time ?? view.start + (endTime - view.start) * (selectedX - left) / (width - left - right);
+    const targetTime = view.start + (endTime - view.start) * (targetX - left) / (width - left - right);
+    let quote = nearestGoldQuote(targetTime, hoverQuotes);
+    const peakX = projectDate(periodPeak.maximumTime);
+    const peakDistance = Math.abs(targetX - peakX) * rect.width / width;
+    const peakEnabled = variant === 'b' && !startDateTransition
+      && periodPeak.maximumTime > activeOption.start && periodPeak.maximumTime < endTime;
+    // A four-pixel target keeps a single historical day reachable on long windows.
+    // The badge still reports the exact CBR maximum, never an interpolated price.
+    if (peakEnabled && peakDistance <= 4) {
+      quote = { time: periodPeak.maximumTime, value: periodPeak.maximum };
+      if (!peakEntered.current) {
+        peakEntered.current = true;
+        const now = performance.now();
+        if (now - lastPeakBurstAt.current >= 800 && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          lastPeakBurstAt.current = now;
+          const peakPoint = smoothPointAtX(visualPoints, peakX, visualSlopes);
+          setPeakBurst(createPeakBurst(peakPoint.x, peakPoint.y));
+        }
+      }
+    } else if (peakDistance > 12) {
+      peakEntered.current = false;
+    }
+    // Keep the latest quote in the snap grid, but its price is
+    // already shown by the permanent current-price badge.
+    if (!quote || quote.time === endTime) {
+      setSelected(null);
+      return;
+    }
+    const selectedX = projectDate(quote.time);
+    const point = smoothPointAtX(visualPoints, selectedX, visualSlopes);
     setSelected({
       x: point.x,
       y: point.y,
       cursorX,
       cursorY,
       badgeAbove: event.pointerType !== 'mouse' || cursorY > rect.height - 100,
-      time: selectedTime,
-      value: snapped?.value ?? goldQuoteAtOrBefore(selectedTime, goldTimeline).value,
+      time: quote.time,
+      value: quote.value,
     });
   };
   return (
     <div className={`price-analysis${showMobileCalculator ? '' : ' no-tabs'}`}>
-    <div className={`price-chart-layout${showMobileCalculator ? ' with-calculator' : ''}`} data-profitable={isProfitable ? '' : undefined} data-entry={entryPhase} data-morphing={startDateTransition ? '' : undefined}>
+    <div className={`price-chart-layout${showMobileCalculator ? ' with-calculator' : ''}`} data-variant={variant} data-profitable={isProfitable ? '' : undefined} data-entry={entryPhase} data-morphing={startDateTransition ? '' : undefined} data-scrubbing={selected ? '' : undefined}>
     <div className="chart-panel price-chart-panel">
-      <div className="price-window-row">
+      <div className="price-window-row chart-entry-periods" inert={entryPhase === 'waiting' || entryPhase === 'drawing'} aria-hidden={entryPhase === 'waiting' || entryPhase === 'drawing'}>
         <div className="price-window-list" role="group" aria-label="Период графика">
           {goldPriceWindows.map((option) => {
             const returnPercent = goldReturnPercent(currentPrice, goldPriceAt(option.start, goldTimeline, tangents));
+            const returnClassName = variant === 'b' ? 'price-window-return-text' : 'price-window-return';
             return <button className="price-window-button" data-active={activePeriod === option.value ? '' : undefined} type="button" aria-pressed={activePeriod === option.value} onClick={() => changePeriod(option.value)} key={option.value}>
-              {activePeriod === option.value ? `За ${option.label}` : option.label}{activePeriod === option.value && (loaderReady
-                ? <span className={`price-window-return${returnPercent < 0 ? ' negative' : returnPercent === 0 ? ' neutral' : ''}`}>{returnPercent > 0 ? '+' : ''}{returnPercent}%</span>
-                : showLoader ? <span className="price-window-return is-loading" role="status" aria-label="Загружается доходность"><span className="price-window-spinner" aria-hidden="true" /></span> : null)}
+              {activePeriod === option.value ? `За ${option.label}` : option.label}{activePeriod === option.value && <span className={`${returnClassName}${returnPercent < 0 ? ' negative' : returnPercent === 0 ? ' neutral' : ''}`}>{returnPercent > 0 ? '+' : ''}{returnPercent}%</span>}
             </button>;
           })}
         </div>
       </div>
-      <div className="liveline-chart" ref={chartRef} aria-busy={entryPhase === 'waiting'}>
-        {showLoader && entryPhase === 'waiting' && <div className="chart-loading" role="status" aria-label="Загружаются цены золота">
-          <svg className="chart-loading-line" viewBox="0 0 700 40" preserveAspectRatio="none" aria-hidden="true">
-            <path d="M0 20 C58 20 58 10 116 10 S174 30 232 30 S290 10 348 10 S406 30 464 30 S522 10 580 10 S642 20 700 20" />
-          </svg>
-        </div>}
-        <svg className="price-chart" viewBox="0 0 1000 400" preserveAspectRatio="none" role="img" aria-label={`Динамика цены золота за период ${formatMilestoneDate(view.start)} — ${formatMilestoneDate(endTime)}`} onPointerMove={(event) => { if (event.pointerType === 'mouse' || event.currentTarget.hasPointerCapture(event.pointerId)) updateSelection(event); }} onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); updateSelection(event); }} onPointerUp={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); if (event.pointerType !== 'mouse') setSelected(null); }} onLostPointerCapture={(event) => { if (event.pointerType !== 'mouse') setSelected(null); }} onPointerCancel={() => setSelected(null)} onPointerLeave={(event) => { if (event.pointerType === 'mouse') setSelected(null); }}>
+      <div className="liveline-chart" ref={chartRef} aria-busy={entryPhase === 'waiting'} data-peak-burst={peakBurst ? '' : undefined}>
+        {showLoader && entryPhase === 'waiting' && <ChartLoadingLine />}
+        <svg className="price-chart" viewBox="0 0 1000 400" preserveAspectRatio="none" role="img" aria-label={`Динамика цены золота за период ${formatMilestoneDate(view.start)} — ${formatMilestoneDate(endTime)}`}
+          onPointerMove={hoverEnabled ? (event) => { if (event.pointerType === 'mouse' || event.currentTarget.hasPointerCapture(event.pointerId)) updateSelection(event); } : undefined}
+          onPointerDown={hoverEnabled ? (event) => { event.currentTarget.setPointerCapture(event.pointerId); updateSelection(event); } : undefined}
+          onPointerUp={hoverEnabled ? (event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); if (event.pointerType !== 'mouse') setSelected(null); } : undefined}
+          onLostPointerCapture={hoverEnabled ? (event) => { if (event.pointerType !== 'mouse') setSelected(null); } : undefined}
+          onPointerCancel={hoverEnabled ? () => setSelected(null) : undefined}
+          onPointerLeave={hoverEnabled ? (event) => { if (event.pointerType === 'mouse') setSelected(null); } : undefined}
+        >
           <defs>
             <linearGradient id={fillId} gradientUnits="userSpaceOnUse" x1="0" y1={top} x2="0" y2={dateDividerY}>
-              <stop offset="0%" stopColor={isProfitable ? '#36c578' : '#d8e4f6'} stopOpacity={isProfitable ? .2 : 1} />
-              <stop offset="100%" stopColor={isProfitable ? '#36c578' : '#d8e4f6'} stopOpacity="0" />
+              <stop offset="0%" stopColor={isProfitable ? 'var(--chart-line)' : '#d8e4f6'} stopOpacity={isProfitable ? .2 : 1} />
+              <stop offset="100%" stopColor={isProfitable ? 'var(--chart-line)' : '#d8e4f6'} stopOpacity="0" />
             </linearGradient>
             <clipPath id={scrubId}>
               <rect x={mobileViewport ? visualStartX - 2 : 0} y="0" width={mobileViewport ? scrubX - visualStartX + 3 : scrubX + 1} height={height} />
@@ -1114,8 +1495,9 @@ function PriceChart({ showMobileCalculator = false, period, onPeriodChange, time
             ))}
             <line className="chart-date-tick" x1={latestPoint.x} x2={latestPoint.x} y1={dateDividerY} y2={dateDividerY + 6} />
             {selected !== null && <line className="liveline-crosshair" x1={selected.x} x2={selected.x} y1={top} y2={dateDividerY} />}
+            {axisHoverEnabled && selected !== null && <line className="chart-hover-price-guide" x1={left} x2={width + (mobileViewport ? 0 : 12) * width / chartClientWidth} y1={selected.y} y2={selected.y} />}
           </g>
-          <rect x="0" y="0" width={latestPoint.x} height={height} fill="transparent" pointerEvents={entryPhase === 'done' ? 'all' : 'none'} />
+          <rect x="0" y="0" width={latestPoint.x} height={height} fill="transparent" pointerEvents={hoverEnabled && entryPhase === 'done' ? 'all' : 'none'} />
         </svg>
         <div
           className={`chart-intermediate-marker start${mobileViewport ? ' mobile-marker' : ''}${selected ? ' is-scrubbing' : ''}`}
@@ -1123,11 +1505,11 @@ function PriceChart({ showMobileCalculator = false, period, onPeriodChange, time
           aria-label={`${formatHoverDate(view.start)}: ${money.format(sampledPrices[0])} рублей за грамм, начало периода`}
         >
           <span className="chart-intermediate-point" aria-hidden="true" />
-          <span className="chart-intermediate-label" style={{ opacity: entryPhase === 'done' ? 1 : 0 }} aria-hidden="true">
+          <span className="chart-intermediate-label" style={{ opacity: entryPhase === 'done' || entryPhase === 'current' ? 1 : 0, left: mobileViewport ? -8 - left / width * chartClientWidth : undefined }} aria-hidden="true">
             <strong>{money.format(Math.round(sampledPrices[0]))} ₽</strong>
           </span>
         </div>
-        <div className="chart-entry-overlays" aria-hidden={entryPhase !== 'done'}>
+        <div className="chart-entry-overlays" aria-hidden={entryPhase === 'waiting' || entryPhase === 'drawing'}>
         {visibleMarkers.map((marker, index) => (
           <div
             className={`chart-intermediate-marker${mobileViewport ? ' mobile-marker' : ''}${!mobileViewport && index % 2 ? ' staggered' : ''}${mobileViewport && marker.y < 90 ? ' label-below' : ''}${selected ? ' is-scrubbing' : ''}`}
@@ -1139,17 +1521,19 @@ function PriceChart({ showMobileCalculator = false, period, onPeriodChange, time
             <span className="chart-intermediate-label" aria-hidden="true">
               <strong>{money.format(Math.round(marker.value))} ₽</strong>
               <span className={`chart-intermediate-change${marker.change < 0 ? ' negative' : marker.change === 0 ? ' neutral' : ''}`}>
-                {marker.change > 0 ? '+' : marker.change < 0 ? '-' : ''}{Math.abs(marker.change)}%
-              </span>
+                {marker.change > 0 ? '+' : marker.change < 0 ? '-' : ''}{Math.abs(marker.change)}%</span>
             </span>
           </div>
         ))}
-        <span className="chart-extreme-price" style={{ top: `${highLabelY / height * 100}%` }}>{money.format(axisMaximum)} ₽</span>
-        <div className={`chart-current-indicator${hasFadedRight ? ' muted' : ''}${selected ? ' is-scrubbing' : ''}`} style={{ left: `${latestPoint.x / width * 100}%`, top: `${latestPoint.y / height * 100}%` }} aria-label={`Актуальная цена ${money.format(currentPrice)} рублей за грамм`}>
+        <div className={`chart-current-indicator${hasFadedRight ? ' muted' : ''}${selected ? ' is-scrubbing' : ''}`} style={{ left: `${latestPoint.x / width * 100}%`, top: `${latestPoint.y / height * 100}%` }} aria-label={`${refreshFailed ? 'Последняя доступная' : 'Актуальная'} цена ${money.format(currentPrice)} рублей за грамм`}>
           <span className="chart-current-point" aria-hidden="true" />
-          <Badge variant="secondary" className="chart-current-price-badge">{money.format(currentPrice)} ₽</Badge>
+          <Badge variant="secondary" className="chart-current-price-badge">{variant === 'b' ? <>
+            <span className="chart-current-price-value">{money.format(currentPrice)} ₽</span>
+            <span className={`chart-current-return${currentReturnPercent < 0 ? ' negative' : currentReturnPercent === 0 ? ' neutral' : ''}`}>
+              <AnimatedCurrentReturn value={currentReturnPercent} />
+            </span>
+          </> : `${money.format(currentPrice)} ₽`}</Badge>
         </div>
-        <span className="chart-extreme-price" style={{ top: `${lowLabelY / height * 100}%` }}>{money.format(axisMinimum)} ₽</span>
         <div className="chart-timeline-labels">
         {animatedDateMarks.map((mark) => (
           <span key={mark.key} className={`chart-milestone-date ${mark.index === 0 ? 'start' : 'tick'}`} style={{ left: `${mark.x / width * 100}%`, opacity: mark.opacity }} aria-hidden={mark.outgoing || undefined}>{mark.label}</span>
@@ -1159,19 +1543,36 @@ function PriceChart({ showMobileCalculator = false, period, onPeriodChange, time
         <span className="hover-date-width-probe" aria-hidden="true">
           {Array.from({ length: 12 }, (_, month) => <span key={month}>{formatHoverDate(Date.UTC(2024, month, 28))}</span>)}
         </span>
+        {peakBurst && <div key={peakBurst.id} className="chart-peak-burst" style={{ left: `${peakBurst.x / width * 100}%`, top: `${peakBurst.y / height * 100}%` }} aria-hidden="true">
+          <span className="chart-peak-ring" />
+          {peakBurst.particles.map((particle, index) => <span className="chart-peak-particle" key={index} style={{ '--peak-dx': `${particle.x}px`, '--peak-dy': `${particle.y}px`, width: particle.size, height: particle.size, left: particle.originX - particle.size / 2, top: particle.originY - particle.size / 2, animationDelay: `${particle.delay}ms`, animationDuration: `${particle.duration}ms` } as CSSProperties} />)}
+        </div>}
         {selected !== null && <div className="chart-hover-marker" style={{ left: `${selected.x / width * 100}%`, top: `${selected.y / height * 100}%` }} aria-hidden="true">
           <span className="chart-intermediate-point" />
         </div>}
-        {selected !== null && <div className="liveline-badge point-anchored" style={{ width: hoverBadgeWidth, left: Math.max(8, Math.min(chartClientWidth - hoverBadgeWidth - 8, selected.cursorX - hoverBadgeWidth / 2)), top: selected.cursorY, transform: selected.badgeAbove ? 'translateY(calc(-100% - 16px))' : 'translateY(14px)' }}>
+        {axisHoverEnabled && selected !== null && <>
+          <AxisHoverBadge widthPrice={variant === 'b' ? `${money.format(periodPeak.maximum)} ₽` : undefined} widthReturn={variant === 'b' ? `+${Math.max(Math.abs(goldReturnPercent(periodPeak.minimum, sampledPrices[0])), Math.abs(goldReturnPercent(periodPeak.maximum, sampledPrices[0])))}%` : undefined} style={{ right: mobileViewport ? 0 : -12, top: `${selected.y / height * 100}%` }} label={`${formatHoverDate(selected.time)}: ${money.format(selected.value)} рублей за грамм, изменение на ${selectedReturnPercent}% с начала периода`}>
+            <span className="chart-axis-hover-price">{money.format(selected.value)} ₽</span>
+            <span className={`chart-axis-hover-return${selectedReturnPercent < 0 ? ' negative' : selectedReturnPercent === 0 ? ' neutral' : ''}`}>
+              {selectedReturnPercent > 0 ? '+' : ''}{selectedReturnPercent}%
+            </span>
+          </AxisHoverBadge>
+          <time className={`chart-milestone-date chart-axis-hover-date${hoverDateEdge}`} dateTime={new Date(selected.time).toISOString()} style={{ left: `${selected.x / width * 100}%` }}>{selectedDateLabel}</time>
+        </>}
+        {!axisHoverEnabled && selected !== null && <div className="liveline-badge point-anchored" style={{ width: hoverBadgeWidth, left: Math.max(8, Math.min(chartClientWidth - hoverBadgeWidth - 8, selected.cursorX - hoverBadgeWidth / 2)), top: selected.cursorY, transform: selected.badgeAbove ? 'translateY(calc(-100% - 16px))' : 'translateY(14px)' }}>
           <strong>{money.format(selected.value)} ₽</strong>
           <span className={`liveline-badge-return${selectedReturnPercent < 0 ? ' negative' : selectedReturnPercent === 0 ? ' neutral' : ''}`}>
             {selectedReturnPercent > 0 ? '+' : ''}{selectedReturnPercent}%
           </span>
-          <time dateTime={new Date(selected.time).toISOString()}>{formatHoverDate(selected.time)}</time>
+          <time dateTime={new Date(selected.time).toISOString()}>{selectedDateLabel}</time>
         </div>}
         </div>
       </div>
-      <p className="price-chart-disclaimer">Не является инвестиционной рекомендацией. Доходность в прошлом не гарантирует доходность в будущем</p>
+      <p className="price-chart-disclaimer chart-entry-disclaimer" role="status" aria-live="polite" aria-hidden={entryPhase === 'waiting' || entryPhase === 'drawing'}>{refreshFailed
+        ? `Не удалось получить данные Банка России. Показываем сохранённые данные на ${formatCurrentAxisDate(endTime)}`
+        : variant === 'b'
+        ? 'По данным Банка России за 1 грамм. В выходные показываем цену, установленную в последний рабочий день — обычно в пятницу'
+        : 'В выходные показываем цену, установленную Банком России в последний рабочий день — обычно в пятницу'}</p>
     </div>
     {showMobileCalculator && <section className="mobile-return-section" aria-labelledby="mobile-return-title">
       <h3 id="mobile-return-title">Как менялась цена золота</h3>
@@ -1215,7 +1616,7 @@ function PriceChart({ showMobileCalculator = false, period, onPeriodChange, time
         <AssetComparison activePeriod={activePeriod} onPeriodChange={changePeriod} goldReturn={comparisonGoldReturn} showPeriodSelector={false} showHeader={false} principal={investmentPrincipal} />
       </div>
       <div id="mobile-chart-panel" className="mobile-return-panel mobile-return-chart-panel" role="tabpanel" aria-labelledby="mobile-chart-tab" hidden={analysisView !== 'chart'}>
-        {analysisView === 'chart' && <PriceChart period={activePeriod} onPeriodChange={changePeriod} timeline={goldTimeline} />}
+        {analysisView === 'chart' && <PriceChart variant={variant} period={activePeriod} onPeriodChange={changePeriod} timeline={goldTimeline} />}
       </div>
     </section>}
     </div>
@@ -1334,12 +1735,15 @@ function ReturnChart({ onShowPrice }: { onShowPrice: () => void }) {
   );
 }
 
-function PriceHistorySection({ showMobileCalculator = true }: { showMobileCalculator?: boolean }) {
+function PriceHistorySection({ showMobileCalculator = true, variant = 'a' }: { showMobileCalculator?: boolean; variant?: PriceChartVariant }) {
   return (
     <section className="landing-section price-section">
-      <h2 className="section-title">Как менялась <span className="price-title-second-line">цена золота</span></h2>
+      <div className="price-section-heading">
+        <h2 className="section-title">Как менялась <span className="price-title-second-line">цена золота</span></h2>
+        {variant !== 'b' && <p className="price-section-subtitle">По данным Банка России за 1 грамм</p>}
+      </div>
       <div className="chart-content">
-        <PriceChart showMobileCalculator={showMobileCalculator} />
+        <PriceChart showMobileCalculator={showMobileCalculator} variant={variant} />
       </div>
     </section>
   );
@@ -1733,9 +2137,24 @@ export function GoldLandingV3() {
 }
 
 export function GoldChartPreview() {
+  const [showData, setShowData] = useState(true);
+  const [variant, setVariant] = useState<PriceChartVariant>('b');
+  useEffect(() => {
+    const requestedVariant = new URLSearchParams(window.location.search).get('variant');
+    if (requestedVariant === 'a' || requestedVariant === 'b' || requestedVariant === 'c' || requestedVariant === 'd') setVariant(requestedVariant);
+    const changeVariant = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin || event.source !== window.parent) return;
+      if (event.data?.type !== 'gold-chart-variant' || (event.data.variant !== 'a' && event.data.variant !== 'b' && event.data.variant !== 'c' && event.data.variant !== 'd')) return;
+      setVariant(event.data.variant);
+      if (typeof event.data.showData === 'boolean') setShowData(event.data.showData);
+    };
+    window.addEventListener('message', changeVariant);
+    window.parent.postMessage({ type: 'gold-chart-ready' }, window.location.origin);
+    return () => window.removeEventListener('message', changeVariant);
+  }, []);
   return (
-    <main className="chart-preview-page">
-      <PriceHistorySection showMobileCalculator={false} />
+    <main className="chart-preview-page" data-variant={variant} data-show-data={showData}>
+      <PriceHistorySection showMobileCalculator={false} variant={variant} />
     </main>
   );
 }
