@@ -702,15 +702,13 @@ a { color: inherit; text-decoration: none; }
 }
 .faq-content p { margin: 0; }
 .liveline-chart { position: relative; min-height: 0; margin-top: 24px; }
-.liveline-chart[data-peak-burst] { animation: chart-peak-shake 280ms ease-out; }
 .chart-peak-burst { position: absolute; width: 0; height: 0; z-index: 5; pointer-events: none; color: var(--chart-line); }
 .chart-peak-particle { position: absolute; left: -2px; top: -2px; width: 4px; height: 4px; border-radius: 50%; background: currentColor; animation: chart-peak-particle 600ms cubic-bezier(.16,1,.3,1) both; }
 
 .chart-peak-ring { position: absolute; left: -6px; top: -6px; width: 12px; height: 12px; border: 1px solid currentColor; border-radius: 50%; animation: chart-peak-ring 450ms ease-out both; }
 @keyframes chart-peak-particle { 0% { opacity: 0; transform: translate(0, 0) scale(.5); } 12% { opacity: .85; } 100% { opacity: 0; transform: translate(var(--peak-dx), var(--peak-dy)) scale(.3); } }
 @keyframes chart-peak-ring { from { opacity: .55; transform: scale(.7); } to { opacity: 0; transform: scale(2.8); } }
-@keyframes chart-peak-shake { 0%, 100% { translate: 0 0; } 18% { translate: -1px 1px; } 38% { translate: 1.5px -1.5px; } 60% { translate: -1px .5px; } 80% { translate: .5px 0; } }
-@media (prefers-reduced-motion: reduce) { .liveline-chart[data-peak-burst] { animation: none; } .chart-peak-burst { display: none; } }
+@media (prefers-reduced-motion: reduce) { .chart-peak-burst { display: none; } }
 .chart-entry-clip { transform-box: fill-box; transform-origin: left center; transform: scaleX(var(--chart-entry-start-scale)); }
 .price-chart-layout[data-entry='drawing'] .chart-entry-clip { transform: scaleX(1); transition: transform 1600ms cubic-bezier(.22,.61,.36,1); }
 .price-chart-layout[data-entry='current'] .chart-entry-clip,

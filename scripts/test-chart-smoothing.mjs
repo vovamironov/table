@@ -13,49 +13,67 @@ const load = async (input) => {
 const curve = await load(`${pureSource}\nexport { ${exported.join(', ')} };`);
 const { goldPriceHistory } = await load(await readFile(new URL('../app/gold-price-history.ts', import.meta.url), 'utf8'));
 
-test('daily hover carries the last published price across weekends and leap day without changing history', () => {
-  const quote = (month, day, value) => ({ time: Date.UTC(2024, month - 1, day), value });
-  const timeline = [quote(2, 28, 10), quote(3, 1, 12), quote(3, 4, 15)];
+test('daily hover keeps every calendar day and carries Friday prices over the weekend', () => {
+  const quote = (day, value) => ({ time: Date.UTC(2024, 0, day), value });
+  const timeline = [quote(12, 10), quote(15, 12), quote(16, 13)];
   const original = structuredClone(timeline);
-  const daily = curve.goldHoverQuotes(timeline, timeline[0].time, []);
-  assert.deepEqual(daily, [quote(2, 28, 10), quote(2, 29, 10), quote(3, 1, 12), quote(3, 2, 12), quote(3, 3, 12), quote(3, 4, 15)]);
+  const anchors = [timeline[0], timeline.at(-1)];
+  const daily = curve.goldHoverQuotes(timeline, timeline[0].time, anchors);
+  assert.deepEqual(daily, [quote(12, 10), quote(13, 10), quote(14, 10), quote(15, 12), quote(16, 13)]);
+  assert.deepEqual(curve.goldHoverQuotes(timeline, timeline[0].time, anchors, 'day'), daily);
+  assert.equal(curve.nearestGoldQuote(Date.UTC(2024, 0, 14), daily).value, 10);
+  assert.equal(curve.nearestGoldQuote(Date.UTC(2024, 0, 15), daily).value, 12);
+  assert.equal(daily[0], anchors[0]);
+  assert.equal(daily.at(-1), anchors.at(-1));
   assert.deepEqual(timeline, original);
 });
 
-test('daily snapping respects nearest-time boundaries and includes the current endpoint', () => {
-  const timeline = [{ time: Date.UTC(2025, 9, 10), value: 10 }, { time: Date.UTC(2025, 9, 13), value: 20 }];
-  const daily = curve.goldHoverQuotes(timeline, Date.UTC(2025, 9, 11), []);
-  const midpoint = (daily[0].time + daily[1].time) / 2;
-  assert.equal(daily.length, 3);
-  assert.equal(daily[0].value, 10);
-  assert.equal(curve.nearestGoldQuote(0, daily), daily[0]);
-  assert.equal(curve.nearestGoldQuote(midpoint, daily), daily[0]);
-  assert.equal(curve.nearestGoldQuote(midpoint + 1, daily), daily[1]);
-  assert.equal(curve.nearestGoldQuote(Date.UTC(2026, 0, 1), daily), daily.at(-1));
-  assert.deepEqual(daily.at(-1), timeline.at(-1));
+test('monthly hover uses the price effective on the UTC 15th through leap February and partial months', () => {
+  const quote = (month, day, value) => ({ time: Date.UTC(2024, month - 1, day), value });
+  const timeline = [quote(1, 1, 10), quote(1, 14, 12), quote(1, 16, 13), quote(2, 14, 20), quote(2, 16, 22), quote(2, 29, 23), quote(3, 12, 30), quote(3, 20, 31), quote(4, 10, 32)];
+  const original = structuredClone(timeline);
+  const anchors = [timeline[0], timeline.at(-1)];
+  const monthly = curve.goldHoverQuotes(timeline, timeline[0].time, anchors, 'month');
+  assert.deepEqual(monthly, [anchors[0], quote(1, 15, 12), quote(2, 15, 20), quote(3, 15, 30), anchors[1]]);
+  const partialAnchors = [timeline[2], timeline.at(-1)];
+  const partial = curve.goldHoverQuotes(timeline, timeline[2].time, partialAnchors, 'month');
+  assert.deepEqual(partial, [partialAnchors[0], quote(2, 15, 20), quote(3, 15, 30), partialAnchors[1]]);
+  assert.ok(partial.every(({ time }) => time >= partialAnchors[0].time && time <= partialAnchors[1].time));
+  const midpoint = (monthly[1].time + monthly[2].time) / 2;
+  assert.equal(curve.nearestGoldQuote(midpoint, monthly), monthly[1]);
+  assert.equal(curve.nearestGoldQuote(midpoint + 1, monthly), monthly[2]);
+  assert.equal(curve.nearestGoldQuote(Date.UTC(2024, 3, 10), monthly), anchors[1]);
   assert.equal(curve.nearestGoldQuote(0, []), null);
+  assert.deepEqual(timeline, original);
 });
 
-test('daily hover selects every permanent milestone exactly without duplicate calendar days', () => {
-  const day = 86400000;
-  const timeline = goldPriceHistory.map(([days, value]) => ({ time: Date.UTC(2011, 0, 1) + days * day, value }));
+test('long monthly windows preserve exact desktop and mobile milestones without changing source history', () => {
+  const timeline = goldPriceHistory.map(([days, value]) => ({ time: Date.UTC(2011, 0, 1) + days * 86400000, value }));
   const original = structuredClone(timeline);
   const end = timeline.at(-1).time;
-  for (const months of [12, 60, 120, 180]) {
+  for (const months of [60, 120, 180]) {
     const start = curve.goldWindowStart(end, months, timeline);
     for (const intervals of [3, 4]) {
       const anchors = Array.from({ length: intervals + 1 }, (_, i) => {
         const time = start + (end - start) * i / intervals;
         return { time, value: curve.goldQuoteAtOrBefore(time, timeline).value };
       });
-      const hovered = curve.goldHoverQuotes(timeline, start, anchors);
-      const keys = hovered.map(({ time }) => Math.floor(time / day));
-      assert.equal(new Set(keys).size, hovered.length, 'a milestone replaces the point for its calendar day');
-      assert.equal(hovered.length, Math.floor(end / day) - Math.ceil(start / day) + 1);
-      for (const anchor of anchors) assert.equal(curve.nearestGoldQuote(anchor.time, hovered), anchor);
-      for (const point of hovered) assert.equal(point.value, curve.goldQuoteAtOrBefore(point.time, timeline).value);
+      const originalAnchors = structuredClone(anchors);
+      const hovered = curve.goldHoverQuotes(timeline, start, anchors, 'month');
+      assert.equal(new Set(hovered.map(({ time }) => Math.floor(time / 86400000))).size, hovered.length);
+      assert.ok(hovered.length >= months && hovered.length <= months + anchors.length + 1, 'monthly candidates plus exact anchors must stay a sparse selection grid');
+      assert.ok(hovered.every(({ time }, i) => time >= start && time <= end && (i === 0 || time > hovered[i - 1].time)));
+      for (const anchor of anchors) {
+        assert.equal(curve.nearestGoldQuote(anchor.time, hovered), anchor);
+      }
+      for (const point of hovered.filter((point) => !anchors.includes(point))) {
+        assert.equal(new Date(point.time).getUTCDate(), 15);
+        assert.equal(point.time % 86400000, 0);
+        assert.equal(point.value, timeline.findLast(({ time }) => time <= point.time).value);
+      }
       assert.equal(hovered[0], anchors[0]);
       assert.equal(hovered.at(-1), anchors.at(-1));
+      assert.deepEqual(anchors, originalAnchors);
     }
   }
   assert.deepEqual(timeline, original);

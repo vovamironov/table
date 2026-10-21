@@ -1,15 +1,15 @@
 {
-  "version": "v159",
+  "version": "v161",
   "variant": "b",
-  "source_commit": "2850826731b7f47a2fd04a1f75e8bf9ba8493869",
-  "source_date": "2026-10-16",
-  "prepared_date": "2026-10-19",
-  "description": "SHA-256 of unchanged files copied from v159. Modified test files are listed separately; packaging configuration and documentation are excluded.",
+  "source_commit": "919f904fbb5e2676e4c5e7c13fa0370db95de5fd",
+  "source_date": "2026-10-21",
+  "prepared_date": "2026-10-21",
+  "description": "SHA-256 of unchanged application files, assets, and tests copied from v161. Standalone packaging configuration and documentation are excluded.",
   "sha256": {
     "app/api/gold-prices/route.ts": "26a390756d800ef128c3e9c0e1da52686ee1d6584222bb7bb48fc904dd0db598",
     "app/asset-comparison.tsx": "08babaee4891f0670d600c7c78f987f97eeeae57b2b2ea6b58fb7644bfb896c8",
-    "app/globals.css": "f395b896ba09713fd6946e86a0688e41f7da18b332137301afb92c935803846e",
-    "app/gold-landing.tsx": "08db5a4f10d4ac9d0a6a8684fb494b1577aa9e49fcb93949870393c097adb3ba",
+    "app/globals.css": "a9af97c4d1dfc80518dcfb3345497ae21a6756d98bc113fe30ac2366544f2e7b",
+    "app/gold-landing.tsx": "a9c029208f8d5af750ca161bbfaa93db3e437244c852f0b988a0e0a1daf036ec",
     "app/gold-price-history.ts": "c482586d779316a308a545c578c4af594d2fec1d21a25ed94a799beca9dba3f6",
     "app/layout.tsx": "3979d9f7a22451fb1b00fa5736b3c01cb4edce0de8ce6af3f437c090d033c267",
     "app/page.tsx": "29d5a7ceedae50bf66dd9ba88a9dddfbf31f44567c2e7b53a38423eb6739e23f",
@@ -86,13 +86,7 @@
     "public/fonts/neue-haas-unica-medium.ttf": "95d9d4ecfb58c74ea28fa25031283b3573b8ba3c5bea1a2611e107d5e7bc8f30",
     "public/fonts/neue-haas-unica-regular.ttf": "92912eafee147392a16dacf5ca1d2f8f0a3bc4d9978ce7cc7f60cfa164fd2039",
     "public/licenses/liveline.txt": "8c40ce6222fe6a3aef72447335a25a264a58cfd27aca89e904a5a24ff43e9bca",
-    "scripts/test-cbr-gold.mjs": "beee38a11949d9826b67d47df094c9eae1f23abb50510a7131e34f653afa7a4e"
-  },
-  "modified_files": {
-    "scripts/test-chart-smoothing.mjs": {
-      "source_sha256": "528c9c2b7fc246144436c90ad62d40d4b1cfef2dd2d68a0de6e7dcbe49669330",
-      "handoff_sha256": "6eee80135650efd882b1e1485bbcd653fcc46529faef34e0c03c97e5eaea406b",
-      "reason": "Replace obsolete monthly-hover tests with daily-hover regression tests matching v159; application code is unchanged."
-    }
+    "scripts/test-cbr-gold.mjs": "beee38a11949d9826b67d47df094c9eae1f23abb50510a7131e34f653afa7a4e",
+    "scripts/test-chart-smoothing.mjs": "1be72b24d9f06d8afe5803609ae2ab10a4dbc5428669825f9b7c1de2a13e5476"
   }
 }

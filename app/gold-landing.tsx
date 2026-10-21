@@ -776,13 +776,25 @@ function goldQuoteAtOrBefore(time: number, timeline: GoldPricePoint[]) {
   return timeline[high].time <= time ? timeline[high] : timeline[low];
 }
 
-function goldHoverQuotes(sourceQuotes: GoldPricePoint[], start: number, anchors: GoldPricePoint[]) {
+function goldHoverQuotes(sourceQuotes: GoldPricePoint[], start: number, anchors: GoldPricePoint[], granularity: 'day' | 'month' = 'day') {
   const quotes = new Map<number, GoldPricePoint>();
   const day = 86_400_000;
   const dayKey = (time: number) => Math.floor(time / day);
-  // Every calendar day is selectable, including days carrying the last CBR price.
-  for (let time = Math.ceil(start / day) * day; time <= sourceQuotes.at(-1)!.time; time += day) {
-    quotes.set(dayKey(time), { time, value: goldQuoteAtOrBefore(time, sourceQuotes).value });
+  const end = sourceQuotes.at(-1)!.time;
+  if (granularity === 'month') {
+    // A month's representative quote is the CBR price effective on its 15th.
+    // Keep the calendar date even when a weekend carries an earlier quote.
+    const first = new Date(start);
+    for (let month = first.getUTCMonth();; month++) {
+      const time = Date.UTC(first.getUTCFullYear(), month, 15);
+      if (time > end) break;
+      if (time >= start) quotes.set(dayKey(time), { time, value: goldQuoteAtOrBefore(time, sourceQuotes).value });
+    }
+  } else {
+    // Every calendar day is selectable, including days carrying the last CBR price.
+    for (let time = Math.ceil(start / day) * day; time <= end; time += day) {
+      quotes.set(dayKey(time), { time, value: goldQuoteAtOrBefore(time, sourceQuotes).value });
+    }
   }
   // Keep permanent milestones at their exact position and price.
   for (const anchor of anchors) quotes.set(dayKey(anchor.time), anchor);
@@ -1328,12 +1340,13 @@ function LoadedPriceChart({ showMobileCalculator = false, variant = 'a', period,
     return { x, y: smoothPointAtX(visualPoints, x, visualSlopes).y, time, value, change };
   });
   const startingPrice = sampledPrices[0];
-  // Reuse the full daily grid during pointer movement; selection is a binary search.
+  const monthlyHover = variant === 'b' && activeOption.months > 12;
+  // Only B's long windows use mid-month quotes. Rendering keeps the full history.
   const hoverQuotes = useMemo(() => goldHoverQuotes(goldTimeline, view.start, [
     { time: view.start, value: startingPrice },
     ...markerQuotes,
     { time: endTime, value: currentPrice },
-  ]), [goldTimeline, view.start, startingPrice, markerQuotes, endTime, currentPrice]);
+  ], monthlyHover ? 'month' : 'day'), [goldTimeline, view.start, startingPrice, markerQuotes, endTime, currentPrice, monthlyHover]);
   const transitionProgress = startDateTransition ? (() => {
     const from = Math.log(endTime - startDateTransition.viewFrom);
     const to = Math.log(endTime - startDateTransition.to);
@@ -1385,6 +1398,7 @@ function LoadedPriceChart({ showMobileCalculator = false, variant = 'a', period,
     const targetX = Math.max(left, chartX);
     const targetTime = view.start + (endTime - view.start) * (targetX - left) / (width - left - right);
     let quote = nearestGoldQuote(targetTime, hoverQuotes);
+    let peakSnapped = false;
     const peakX = projectDate(periodPeak.maximumTime);
     const peakDistance = Math.abs(targetX - peakX) * rect.width / width;
     const peakEnabled = variant === 'b' && !startDateTransition
@@ -1393,6 +1407,7 @@ function LoadedPriceChart({ showMobileCalculator = false, variant = 'a', period,
     // The badge still reports the exact CBR maximum, never an interpolated price.
     if (peakEnabled && peakDistance <= 4) {
       quote = { time: periodPeak.maximumTime, value: periodPeak.maximum };
+      peakSnapped = true;
       if (!peakEntered.current) {
         peakEntered.current = true;
         const now = performance.now();
@@ -1405,13 +1420,17 @@ function LoadedPriceChart({ showMobileCalculator = false, variant = 'a', period,
     } else if (peakDistance > 12) {
       peakEntered.current = false;
     }
+    // Keep monthly hover visible up to the existing endpoint hit area.
+    // Its nearest candidate may already be the permanently displayed current quote.
+    if (monthlyHover && quote?.time === endTime) quote = hoverQuotes.at(-2) ?? null;
     // Keep the latest quote in the snap grid, but its price is
     // already shown by the permanent current-price badge.
     if (!quote || quote.time === endTime) {
       setSelected(null);
       return;
     }
-    const selectedX = projectDate(quote.time);
+    // Move continuously through monthly data; only the peak deliberately snaps.
+    const selectedX = monthlyHover && !peakSnapped ? targetX : projectDate(quote.time);
     const point = smoothPointAtX(visualPoints, selectedX, visualSlopes);
     setSelected({
       x: point.x,
