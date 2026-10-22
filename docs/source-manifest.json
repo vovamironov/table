@@ -1,15 +1,15 @@
 {
-  "version": "v161",
+  "version": "v162",
   "variant": "b",
-  "source_commit": "919f904fbb5e2676e4c5e7c13fa0370db95de5fd",
-  "source_date": "2026-10-21",
-  "prepared_date": "2026-10-21",
-  "description": "SHA-256 of unchanged application files, assets, and tests copied from v161. Standalone packaging configuration and documentation are excluded.",
+  "source_commit": "d8dfb8d23a769c6d29548bbbcf9c130900a9ba25",
+  "source_date": "2026-10-22",
+  "prepared_date": "2026-10-22",
+  "description": "SHA-256 of application files, assets, and tests copied from v162. Standalone packaging configuration and documentation are excluded.",
   "sha256": {
     "app/api/gold-prices/route.ts": "26a390756d800ef128c3e9c0e1da52686ee1d6584222bb7bb48fc904dd0db598",
     "app/asset-comparison.tsx": "08babaee4891f0670d600c7c78f987f97eeeae57b2b2ea6b58fb7644bfb896c8",
     "app/globals.css": "a9af97c4d1dfc80518dcfb3345497ae21a6756d98bc113fe30ac2366544f2e7b",
-    "app/gold-landing.tsx": "a9c029208f8d5af750ca161bbfaa93db3e437244c852f0b988a0e0a1daf036ec",
+    "app/gold-landing.tsx": "a24640af58cefefc4d91bac6289ca3370401c8658df342175538e468a58891fd",
     "app/gold-price-history.ts": "c482586d779316a308a545c578c4af594d2fec1d21a25ed94a799beca9dba3f6",
     "app/layout.tsx": "3979d9f7a22451fb1b00fa5736b3c01cb4edce0de8ce6af3f437c090d033c267",
     "app/page.tsx": "29d5a7ceedae50bf66dd9ba88a9dddfbf31f44567c2e7b53a38423eb6739e23f",
@@ -87,6 +87,6 @@
     "public/fonts/neue-haas-unica-regular.ttf": "92912eafee147392a16dacf5ca1d2f8f0a3bc4d9978ce7cc7f60cfa164fd2039",
     "public/licenses/liveline.txt": "8c40ce6222fe6a3aef72447335a25a264a58cfd27aca89e904a5a24ff43e9bca",
     "scripts/test-cbr-gold.mjs": "beee38a11949d9826b67d47df094c9eae1f23abb50510a7131e34f653afa7a4e",
-    "scripts/test-chart-smoothing.mjs": "1be72b24d9f06d8afe5803609ae2ab10a4dbc5428669825f9b7c1de2a13e5476"
+    "scripts/test-chart-smoothing.mjs": "a14ebec4e794dad9720e4ca7e5d92b99e336f2e3d82f72018f802cdacebaf5fc"
   }
 }

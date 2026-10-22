@@ -776,25 +776,46 @@ function goldQuoteAtOrBefore(time: number, timeline: GoldPricePoint[]) {
   return timeline[high].time <= time ? timeline[high] : timeline[low];
 }
 
+function goldMonthlyAverageQuotes(sourceQuotes: GoldPricePoint[], start: number): GoldPricePoint[] {
+  if (sourceQuotes.length === 0 || start > sourceQuotes.at(-1)!.time) return [];
+  const day = 86_400_000;
+  const firstMonth = new Date(start);
+  const monthStart = Date.UTC(firstMonth.getUTCFullYear(), firstMonth.getUTCMonth(), 1);
+  const firstDay = Math.ceil(Math.max(monthStart, sourceQuotes[0].time) / day) * day;
+  const end = sourceQuotes.at(-1)!.time;
+  const months = new Map<number, { total: number; days: number }>();
+  let quoteIndex = 0;
+  // Weight each effective price by calendar days, including weekends.
+  // The first month is complete where history exists; the last stops at the latest quote.
+  for (let time = firstDay; time <= end; time += day) {
+    while (quoteIndex + 1 < sourceQuotes.length && sourceQuotes[quoteIndex + 1].time <= time) quoteIndex++;
+    const date = new Date(time);
+    const month = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1);
+    const average = months.get(month) ?? { total: 0, days: 0 };
+    average.total += sourceQuotes[quoteIndex].value;
+    average.days++;
+    months.set(month, average);
+  }
+  return [...months].map(([time, { total, days }]) => ({ time, value: total / days }));
+}
+
+function goldMonthlyQuoteAt(time: number, monthlyQuotes: GoldPricePoint[]) {
+  if (monthlyQuotes.length === 0) return null;
+  const date = new Date(time);
+  const month = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1);
+  const quote = goldQuoteAtOrBefore(month, monthlyQuotes);
+  return quote.time === month ? quote : null;
+}
+
 function goldHoverQuotes(sourceQuotes: GoldPricePoint[], start: number, anchors: GoldPricePoint[], granularity: 'day' | 'month' = 'day') {
+  if (granularity === 'month') return goldMonthlyAverageQuotes(sourceQuotes, start);
   const quotes = new Map<number, GoldPricePoint>();
   const day = 86_400_000;
   const dayKey = (time: number) => Math.floor(time / day);
   const end = sourceQuotes.at(-1)!.time;
-  if (granularity === 'month') {
-    // A month's representative quote is the CBR price effective on its 15th.
-    // Keep the calendar date even when a weekend carries an earlier quote.
-    const first = new Date(start);
-    for (let month = first.getUTCMonth();; month++) {
-      const time = Date.UTC(first.getUTCFullYear(), month, 15);
-      if (time > end) break;
-      if (time >= start) quotes.set(dayKey(time), { time, value: goldQuoteAtOrBefore(time, sourceQuotes).value });
-    }
-  } else {
-    // Every calendar day is selectable, including days carrying the last CBR price.
-    for (let time = Math.ceil(start / day) * day; time <= end; time += day) {
-      quotes.set(dayKey(time), { time, value: goldQuoteAtOrBefore(time, sourceQuotes).value });
-    }
+  // Every calendar day is selectable, including days carrying the last CBR price.
+  for (let time = Math.ceil(start / day) * day; time <= end; time += day) {
+    quotes.set(dayKey(time), { time, value: goldQuoteAtOrBefore(time, sourceQuotes).value });
   }
   // Keep permanent milestones at their exact position and price.
   for (const anchor of anchors) quotes.set(dayKey(anchor.time), anchor);
@@ -1341,7 +1362,7 @@ function LoadedPriceChart({ showMobileCalculator = false, variant = 'a', period,
   });
   const startingPrice = sampledPrices[0];
   const monthlyHover = variant === 'b' && activeOption.months > 12;
-  // Only B's long windows use mid-month quotes. Rendering keeps the full history.
+  // B's long windows show calendar-month averages; rendering keeps the full history.
   const hoverQuotes = useMemo(() => goldHoverQuotes(goldTimeline, view.start, [
     { time: view.start, value: startingPrice },
     ...markerQuotes,
@@ -1383,7 +1404,7 @@ function LoadedPriceChart({ showMobileCalculator = false, variant = 'a', period,
   const hoverDateEdgeMargin = mobileViewport ? 32 : 52;
   const hoverDateEdge = selected && selected.x * chartClientWidth / width < hoverDateEdgeMargin
     ? ' start' : selected && (latestPoint.x - selected.x) * chartClientWidth / width < hoverDateEdgeMargin ? ' current' : '';
-  const selectedDateLabel = selected ? (mobileViewport ? formatMobileHoverDay(selected.time) : formatCurrentAxisDate(selected.time)) : '';
+  const selectedDateLabel = selected ? (monthlyHover ? formatMilestoneDate(selected.time) : mobileViewport ? formatMobileHoverDay(selected.time) : formatCurrentAxisDate(selected.time)) : '';
   const updateSelection = (event: React.PointerEvent<SVGSVGElement>) => {
     if (!hoverEnabled || entryPhase !== 'done') return;
     const rect = event.currentTarget.getBoundingClientRect();
@@ -1397,16 +1418,18 @@ function LoadedPriceChart({ showMobileCalculator = false, variant = 'a', period,
     }
     const targetX = Math.max(left, chartX);
     const targetTime = view.start + (endTime - view.start) * (targetX - left) / (width - left - right);
-    let quote = nearestGoldQuote(targetTime, hoverQuotes);
+    let quote = monthlyHover ? goldMonthlyQuoteAt(targetTime, hoverQuotes) : nearestGoldQuote(targetTime, hoverQuotes);
     let peakSnapped = false;
     const peakX = projectDate(periodPeak.maximumTime);
     const peakDistance = Math.abs(targetX - peakX) * rect.width / width;
     const peakEnabled = variant === 'b' && !startDateTransition
       && periodPeak.maximumTime > activeOption.start && periodPeak.maximumTime < endTime;
     // A four-pixel target keeps a single historical day reachable on long windows.
-    // The badge still reports the exact CBR maximum, never an interpolated price.
+    // The yearly badge reports the exact maximum; long windows keep the month's mean.
     if (peakEnabled && peakDistance <= 4) {
-      quote = { time: periodPeak.maximumTime, value: periodPeak.maximum };
+      quote = monthlyHover
+        ? goldMonthlyQuoteAt(periodPeak.maximumTime, hoverQuotes)
+        : { time: periodPeak.maximumTime, value: periodPeak.maximum };
       peakSnapped = true;
       if (!peakEntered.current) {
         peakEntered.current = true;
@@ -1420,17 +1443,14 @@ function LoadedPriceChart({ showMobileCalculator = false, variant = 'a', period,
     } else if (peakDistance > 12) {
       peakEntered.current = false;
     }
-    // Keep monthly hover visible up to the existing endpoint hit area.
-    // Its nearest candidate may already be the permanently displayed current quote.
-    if (monthlyHover && quote?.time === endTime) quote = hoverQuotes.at(-2) ?? null;
     // Keep the latest quote in the snap grid, but its price is
     // already shown by the permanent current-price badge.
-    if (!quote || quote.time === endTime) {
+    if (!quote || (!monthlyHover && quote.time === endTime)) {
       setSelected(null);
       return;
     }
     // Move continuously through monthly data; only the peak deliberately snaps.
-    const selectedX = monthlyHover && !peakSnapped ? targetX : projectDate(quote.time);
+    const selectedX = monthlyHover ? (peakSnapped ? peakX : targetX) : projectDate(quote.time);
     const point = smoothPointAtX(visualPoints, selectedX, visualSlopes);
     setSelected({
       x: point.x,
@@ -1570,13 +1590,13 @@ function LoadedPriceChart({ showMobileCalculator = false, variant = 'a', period,
           <span className="chart-intermediate-point" />
         </div>}
         {axisHoverEnabled && selected !== null && <>
-          <AxisHoverBadge widthPrice={variant === 'b' ? `${money.format(periodPeak.maximum)} ₽` : undefined} widthReturn={variant === 'b' ? `+${Math.max(Math.abs(goldReturnPercent(periodPeak.minimum, sampledPrices[0])), Math.abs(goldReturnPercent(periodPeak.maximum, sampledPrices[0])))}%` : undefined} style={{ right: mobileViewport ? 0 : -12, top: `${selected.y / height * 100}%` }} label={`${formatHoverDate(selected.time)}: ${money.format(selected.value)} рублей за грамм, изменение на ${selectedReturnPercent}% с начала периода`}>
+          <AxisHoverBadge widthPrice={variant === 'b' ? `${money.format(periodPeak.maximum)} ₽` : undefined} widthReturn={variant === 'b' ? `+${Math.max(Math.abs(goldReturnPercent(periodPeak.minimum, sampledPrices[0])), Math.abs(goldReturnPercent(periodPeak.maximum, sampledPrices[0])))}%` : undefined} style={{ right: mobileViewport ? 0 : -12, top: `${selected.y / height * 100}%` }} label={`${monthlyHover ? selectedDateLabel + ', средняя цена за месяц' : formatHoverDate(selected.time)}: ${money.format(selected.value)} рублей за грамм, изменение на ${selectedReturnPercent}% с начала периода`}>
             <span className="chart-axis-hover-price">{money.format(selected.value)} ₽</span>
             <span className={`chart-axis-hover-return${selectedReturnPercent < 0 ? ' negative' : selectedReturnPercent === 0 ? ' neutral' : ''}`}>
               {selectedReturnPercent > 0 ? '+' : ''}{selectedReturnPercent}%
             </span>
           </AxisHoverBadge>
-          <time className={`chart-milestone-date chart-axis-hover-date${hoverDateEdge}`} dateTime={new Date(selected.time).toISOString()} style={{ left: `${selected.x / width * 100}%` }}>{selectedDateLabel}</time>
+          <time className={`chart-milestone-date chart-axis-hover-date${hoverDateEdge}`} dateTime={monthlyHover ? new Date(selected.time).toISOString().slice(0, 7) : new Date(selected.time).toISOString()} style={{ left: `${selected.x / width * 100}%` }}>{selectedDateLabel}</time>
         </>}
         {!axisHoverEnabled && selected !== null && <div className="liveline-badge point-anchored" style={{ width: hoverBadgeWidth, left: Math.max(8, Math.min(chartClientWidth - hoverBadgeWidth - 8, selected.cursorX - hoverBadgeWidth / 2)), top: selected.cursorY, transform: selected.badgeAbove ? 'translateY(calc(-100% - 16px))' : 'translateY(14px)' }}>
           <strong>{money.format(selected.value)} ₽</strong>

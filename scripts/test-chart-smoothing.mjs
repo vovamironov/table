@@ -5,7 +5,7 @@ import ts from 'typescript';
 
 const source = await readFile(new URL('../app/gold-landing.tsx', import.meta.url), 'utf8');
 const pureSource = source.slice(source.indexOf('function smoothSlope('), source.indexOf('function MobileReturnCalculator('));
-const exported = ['samplePointAtX', 'smoothPointAtX', 'smoothControls', 'smoothPath', 'livelineSlopes', 'cubicDifferencePeak', 'simplifyChartSamples', 'goldHoverQuotes', 'nearestGoldQuote', 'goldQuoteAtOrBefore', 'goldWindowStart', 'goldTangents', 'goldPriceAt', 'goldPriceExtrema'];
+const exported = ['samplePointAtX', 'smoothPointAtX', 'smoothControls', 'smoothPath', 'livelineSlopes', 'cubicDifferencePeak', 'simplifyChartSamples', 'goldMonthlyAverageQuotes', 'goldMonthlyQuoteAt', 'goldHoverQuotes', 'nearestGoldQuote', 'goldQuoteAtOrBefore', 'goldWindowStart', 'goldTangents', 'goldPriceAt', 'goldPriceExtrema', 'goldReturnPercent'];
 const load = async (input) => {
   const { outputText } = ts.transpileModule(input, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } });
   return import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
@@ -28,26 +28,64 @@ test('daily hover keeps every calendar day and carries Friday prices over the we
   assert.deepEqual(timeline, original);
 });
 
-test('monthly hover uses the price effective on the UTC 15th through leap February and partial months', () => {
+test('monthly hover averages each effective calendar day, including weekends and leap day', () => {
   const quote = (month, day, value) => ({ time: Date.UTC(2024, month - 1, day), value });
-  const timeline = [quote(1, 1, 10), quote(1, 14, 12), quote(1, 16, 13), quote(2, 14, 20), quote(2, 16, 22), quote(2, 29, 23), quote(3, 12, 30), quote(3, 20, 31), quote(4, 10, 32)];
+  const timeline = [quote(1, 1, 100), quote(1, 5, 200), quote(1, 8, 300), quote(2, 1, 400), quote(2, 29, 500), quote(3, 5, 600), quote(3, 10, 600)];
   const original = structuredClone(timeline);
-  const anchors = [timeline[0], timeline.at(-1)];
-  const monthly = curve.goldHoverQuotes(timeline, timeline[0].time, anchors, 'month');
-  assert.deepEqual(monthly, [anchors[0], quote(1, 15, 12), quote(2, 15, 20), quote(3, 15, 30), anchors[1]]);
-  const partialAnchors = [timeline[2], timeline.at(-1)];
-  const partial = curve.goldHoverQuotes(timeline, timeline[2].time, partialAnchors, 'month');
-  assert.deepEqual(partial, [partialAnchors[0], quote(2, 15, 20), quote(3, 15, 30), partialAnchors[1]]);
-  assert.ok(partial.every(({ time }) => time >= partialAnchors[0].time && time <= partialAnchors[1].time));
-  const midpoint = (monthly[1].time + monthly[2].time) / 2;
-  assert.equal(curve.nearestGoldQuote(midpoint, monthly), monthly[1]);
-  assert.equal(curve.nearestGoldQuote(midpoint + 1, monthly), monthly[2]);
-  assert.equal(curve.nearestGoldQuote(Date.UTC(2024, 3, 10), monthly), anchors[1]);
-  assert.equal(curve.nearestGoldQuote(0, []), null);
+  const monthly = curve.goldMonthlyAverageQuotes(timeline, timeline[0].time);
+  assert.deepEqual(monthly.map(({ time }) => time), [quote(1, 1, 0).time, quote(2, 1, 0).time, quote(3, 1, 0).time]);
+  assert.ok(Math.abs(monthly[0].value - 8200 / 31) < 1e-10, 'Friday quote must also count on Saturday and Sunday');
+  assert.ok(Math.abs(monthly[1].value - 11700 / 29) < 1e-10, 'February 29 has its own effective quote and weight');
+  assert.equal(monthly[2].value, 560, 'current month stops at the latest effective date, without future carry-forward');
   assert.deepEqual(timeline, original);
 });
 
-test('long monthly windows preserve exact desktop and mobile milestones without changing source history', () => {
+test('first hovered month uses the whole available calendar month even before the selected period starts', () => {
+  const quote = (day, value) => ({ time: Date.UTC(2024, 0, day), value });
+  const timeline = [quote(10, 100), quote(20, 200), { time: Date.UTC(2024, 1, 2), value: 300 }];
+  const monthly = curve.goldMonthlyAverageQuotes(timeline, quote(28, 0).time);
+  assert.equal(monthly.length, 2);
+  assert.equal(monthly[0].time, quote(1, 0).time);
+  assert.ok(Math.abs(monthly[0].value - 3400 / 22) < 1e-10, 'only January 10–31 exists in source history; January 10–27 still belongs to the monthly mean');
+  assert.equal(monthly[1].value, 250, 'February 1 carries January 20; February 2 has the new quote');
+  assert.deepEqual(curve.goldMonthlyAverageQuotes(timeline, Date.UTC(2024, 1, 1)), [monthly[1]]);
+});
+
+test('monthly selection switches at calendar month and year boundaries, rather than midpoint distances', () => {
+  const timeline = [
+    { time: Date.UTC(2023, 11, 1), value: 100 },
+    { time: Date.UTC(2024, 0, 1), value: 200 },
+    { time: Date.UTC(2024, 1, 1), value: 300 },
+    { time: Date.UTC(2024, 2, 1), value: 400 },
+    { time: Date.UTC(2024, 2, 10), value: 400 },
+  ];
+  const monthly = curve.goldMonthlyAverageQuotes(timeline, timeline[0].time);
+  for (const [time, value] of [
+    [Date.UTC(2023, 11, 31, 23, 59, 59, 999), 100],
+    [Date.UTC(2024, 0, 1), 200],
+    [Date.UTC(2024, 0, 31, 23, 59, 59, 999), 200],
+    [Date.UTC(2024, 1, 1), 300],
+    [Date.UTC(2024, 1, 29, 23, 59, 59, 999), 300],
+    [Date.UTC(2024, 2, 1), 400],
+  ]) assert.equal(curve.goldMonthlyQuoteAt(time, monthly)?.value, value);
+  assert.equal(curve.goldMonthlyQuoteAt(Date.UTC(2024, 0, 1), []), null);
+});
+
+test('monthly hover ignores exact milestone and peak prices and calculates return from the mean', () => {
+  const quote = (day, value) => ({ time: Date.UTC(2024, 0, day), value });
+  const timeline = [quote(1, 100), quote(16, 300), quote(31, 200)];
+  const anchors = [quote(1, 100), quote(15, 9999), quote(16, 300), quote(31, 200)];
+  const originalAnchors = structuredClone(anchors);
+  const monthly = curve.goldHoverQuotes(timeline, timeline[0].time, anchors, 'month');
+  assert.deepEqual(monthly, [quote(1, 200)]);
+  assert.equal(curve.goldMonthlyQuoteAt(quote(16, 0).time, monthly), monthly[0], 'hovering the peak uses that month’s mean');
+  assert.equal(curve.goldReturnPercent(monthly[0].value, timeline[0].value), 100);
+  const falling = curve.goldMonthlyAverageQuotes([quote(1, 200), quote(2, 100), quote(31, 100)], quote(1, 0).time);
+  assert.equal(curve.goldReturnPercent(falling[0].value, 200), -48);
+  assert.deepEqual(anchors, originalAnchors);
+});
+
+test('5-, 10- and 15-year monthly hover has one mean per calendar month regardless of desktop or mobile milestones', () => {
   const timeline = goldPriceHistory.map(([days, value]) => ({ time: Date.UTC(2011, 0, 1) + days * 86400000, value }));
   const original = structuredClone(timeline);
   const end = timeline.at(-1).time;
@@ -60,19 +98,19 @@ test('long monthly windows preserve exact desktop and mobile milestones without 
       });
       const originalAnchors = structuredClone(anchors);
       const hovered = curve.goldHoverQuotes(timeline, start, anchors, 'month');
-      assert.equal(new Set(hovered.map(({ time }) => Math.floor(time / 86400000))).size, hovered.length);
-      assert.ok(hovered.length >= months && hovered.length <= months + anchors.length + 1, 'monthly candidates plus exact anchors must stay a sparse selection grid');
-      assert.ok(hovered.every(({ time }, i) => time >= start && time <= end && (i === 0 || time > hovered[i - 1].time)));
-      for (const anchor of anchors) {
-        assert.equal(curve.nearestGoldQuote(anchor.time, hovered), anchor);
+      const first = new Date(start), last = new Date(end);
+      const count = (last.getUTCFullYear() - first.getUTCFullYear()) * 12 + last.getUTCMonth() - first.getUTCMonth() + 1;
+      assert.equal(hovered.length, count);
+      assert.deepEqual(hovered, curve.goldMonthlyAverageQuotes(timeline, start));
+      assert.equal(new Set(hovered.map(({ time }) => time)).size, hovered.length);
+      assert.ok(hovered.every(({ time }, i) => new Date(time).getUTCDate() === 1 && time <= end && (i === 0 || time > hovered[i - 1].time)));
+      for (const point of [hovered[0], hovered[Math.floor(hovered.length / 2)], hovered.at(-1)]) {
+        const date = new Date(point.time);
+        const lastDay = Math.min(end, Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0));
+        const values = [];
+        for (let time = Math.max(point.time, timeline[0].time); time <= lastDay; time += 86400000) values.push(timeline.findLast((quote) => quote.time <= time).value);
+        assert.ok(Math.abs(point.value - values.reduce((sum, value) => sum + value, 0) / values.length) < 1e-8);
       }
-      for (const point of hovered.filter((point) => !anchors.includes(point))) {
-        assert.equal(new Date(point.time).getUTCDate(), 15);
-        assert.equal(point.time % 86400000, 0);
-        assert.equal(point.value, timeline.findLast(({ time }) => time <= point.time).value);
-      }
-      assert.equal(hovered[0], anchors[0]);
-      assert.equal(hovered.at(-1), anchors.at(-1));
       assert.deepEqual(anchors, originalAnchors);
     }
   }
